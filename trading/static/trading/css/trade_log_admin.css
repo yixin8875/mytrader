@@ -1,0 +1,59 @@
+/* 交易日志Admin样式 */
+
+/* 拖拽上传区域样式 */
+.inline-group {
+    position: relative;
+}
+
+/* 图片预览样式 */
+.image-preview {
+    max-width: 300px;
+    max-height: 200px;
+    margin: 10px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 文件输入框样式 */
+input[type="file"] {
+    margin: 5px 0;
+}
+
+/* 粘贴提示样式 */
+.paste-hint {
+    background-color: #e3f2fd;
+    border: 2px dashed #2196f3;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    margin: 10px 0;
+    color: #1976d2;
+    font-weight: 500;
+}
+
+.paste-hint.dragover {
+    background-color: #bbdefb;
+    border-color: #1976d2;
+}
+
+/* 添加图片按钮样式 */
+.add-paste-button {
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 10px 0;
+    font-size: 14px;
+}
+
+.add-paste-button:hover {
+    background-color: #45a049;
+}
+
+/* 表格行样式 */
+.inline-related .tradelogimage-related {
+    border-bottom: 1px solid #eee;
+}
