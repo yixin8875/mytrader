@@ -213,7 +213,7 @@ JAZZMIN_SETTINGS = {
         'auth.Group': 'fas fa-users-cog',
         'quant': 'fas fa-robot',
         'quant.StockData': 'fas fa-database',
-        'quant.Strategy': 'fas fa-brain',
+        'quant.QuantStrategy': 'fas fa-brain',
         'quant.BacktestResult': 'fas fa-chart-area',
         'quant.TradeOrder': 'fas fa-file-invoice-dollar',
     },

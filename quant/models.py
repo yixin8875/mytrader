@@ -29,7 +29,7 @@ class StockData(models.Model):
         return f"{self.symbol} {self.date}"
 
 
-class Strategy(models.Model):
+class QuantStrategy(models.Model):
     """量化策略配置"""
     STATUS_CHOICES = [
         ('draft', '草稿'),
@@ -70,7 +70,7 @@ class Strategy(models.Model):
 
 class BacktestResult(models.Model):
     """回测结果报告"""
-    strategy = models.ForeignKey(Strategy, on_delete=models.CASCADE, verbose_name='策略', related_name='backtest_results')
+    strategy = models.ForeignKey(QuantStrategy, on_delete=models.CASCADE, verbose_name='策略', related_name='backtest_results')
     name = models.CharField('回测名称', max_length=100, blank=True)
     start_date = models.DateField('开始日期')
     end_date = models.DateField('结束日期')
@@ -136,7 +136,7 @@ class TradeOrder(models.Model):
         ('live', '实盘'),
     ]
 
-    strategy = models.ForeignKey(Strategy, on_delete=models.CASCADE, verbose_name='策略', related_name='orders', null=True, blank=True)
+    strategy = models.ForeignKey(QuantStrategy, on_delete=models.CASCADE, verbose_name='策略', related_name='orders', null=True, blank=True)
     backtest = models.ForeignKey(BacktestResult, on_delete=models.CASCADE, verbose_name='回测', related_name='orders', null=True, blank=True)
     mode = models.CharField('交易模式', max_length=20, choices=MODE_CHOICES, default='backtest')
     symbol = models.CharField('股票代码', max_length=20, db_index=True)

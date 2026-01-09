@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse, HttpResponse
-from django.db.models import Sum, Count, Avg
+from django.db.models import Sum, Count, Avg, Min, Max
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -9,7 +9,7 @@ from django.contrib.auth.decorators import login_required
 from datetime import timedelta, datetime
 import json
 import logging
-from .models import Account, TradeLog, DailyReport, Position, Strategy, Notification, PriceAlert, Symbol, TradeTag, UserPreference
+from .models import Account, TradeLog, DailyReport, Position, Strategy, Notification, PriceAlert, Symbol, TradeTag, UserPreference, RiskRule, RiskSnapshot
 from .analytics import TradeAnalytics
 from .notifications import NotificationService
 from .utils import api_login_required, parse_date, parse_date_range, check_webhook_rate_limit
@@ -1158,8 +1158,10 @@ def api_correlation_analysis(request):
     """持仓相关性分析 API"""
     account_id = request.GET.get('account_id')
 
-    # 获取当前持仓
-    positions = Position.objects.filter(account__owner=request.user, quantity__gt=0)
+    # 获取当前持仓（使用 select_related 避免 N+1 查询）
+    positions = Position.objects.filter(
+        account__owner=request.user, quantity__gt=0
+    ).select_related('symbol')
     if account_id:
         positions = positions.filter(account_id=account_id)
 
@@ -1463,29 +1465,51 @@ def api_risk_rules_status(request):
     if account_id:
         rules = rules.filter(account_id=account_id)
 
+    # 预先批量查询所有账户的数据，避免 N+1 查询
+    today = timezone.now().date()
+    account_ids = list(rules.values_list('account_id', flat=True).distinct())
+
+    # 批量查询今日盈亏
+    daily_pnl_map = {}
+    daily_pnl_qs = TradeLog.objects.filter(
+        account_id__in=account_ids,
+        trade_time__date=today,
+        status='filled'
+    ).values('account_id').annotate(pnl=Sum('profit_loss'))
+    for item in daily_pnl_qs:
+        daily_pnl_map[item['account_id']] = item['pnl'] or 0
+
+    # 批量查询持仓市值
+    position_map = {}
+    position_qs = Position.objects.filter(
+        account_id__in=account_ids,
+        quantity__gt=0
+    ).values('account_id').annotate(total=Sum('market_value'))
+    for item in position_qs:
+        position_map[item['account_id']] = item['total'] or 0
+
+    # 批量查询今日交易次数
+    trade_count_map = {}
+    trade_count_qs = TradeLog.objects.filter(
+        account_id__in=account_ids,
+        trade_time__date=today
+    ).values('account_id').annotate(count=Count('id'))
+    for item in trade_count_qs:
+        trade_count_map[item['account_id']] = item['count']
+
     result = []
     for rule in rules:
-        # 获取当前值
+        # 使用预查询的数据
         current_value = 0
         if rule.rule_type == 'daily_loss_limit':
-            today_pnl = TradeLog.objects.filter(
-                account=rule.account,
-                trade_time__date=timezone.now().date(),
-                status='filled'
-            ).aggregate(pnl=Sum('profit_loss'))['pnl'] or 0
+            today_pnl = daily_pnl_map.get(rule.account_id, 0)
             current_value = abs(float(today_pnl)) if today_pnl < 0 else 0
         elif rule.rule_type == 'max_position_ratio':
-            total_position = Position.objects.filter(
-                account=rule.account,
-                quantity__gt=0
-            ).aggregate(total=Sum('market_value'))['total'] or 0
+            total_position = position_map.get(rule.account_id, 0)
             if rule.account.current_balance > 0:
                 current_value = float(total_position) / float(rule.account.current_balance) * 100
         elif rule.rule_type == 'daily_trade_limit':
-            current_value = TradeLog.objects.filter(
-                account=rule.account,
-                trade_time__date=timezone.now().date()
-            ).count()
+            current_value = trade_count_map.get(rule.account_id, 0)
 
         threshold = float(rule.threshold_value)
         usage_ratio = (current_value / threshold * 100) if threshold > 0 else 0
@@ -1516,8 +1540,8 @@ def data_management_page(request):
     stock_count = StockData.objects.values('symbol').distinct().count()
     record_count = StockData.objects.count()
     date_range = StockData.objects.aggregate(
-        min_date=models.Min('date'),
-        max_date=models.Max('date')
+        min_date=Min('date'),
+        max_date=Max('date')
     )
 
     context = {
@@ -1961,6 +1985,14 @@ def api_webhook_receive(request, secret_key):
         webhook = Webhook.objects.get(secret_key=secret_key, webhook_type='inbound', status='active')
     except Webhook.DoesNotExist:
         return JsonResponse({'error': 'Invalid webhook'}, status=404)
+
+    # 速率限制检查
+    allowed, remaining, reset_time = check_webhook_rate_limit(secret_key)
+    if not allowed:
+        response = JsonResponse({'error': '请求过于频繁，请稍后再试'}, status=429)
+        response['X-RateLimit-Remaining'] = '0'
+        response['X-RateLimit-Reset'] = str(reset_time)
+        return response
 
     try:
         data = json.loads(request.body)

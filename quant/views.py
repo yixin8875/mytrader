@@ -3,7 +3,7 @@ from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Min, Max
-from .models import Strategy, BacktestResult, StockData
+from .models import QuantStrategy, BacktestResult, StockData
 from .tasks import run_backtest_task, fetch_stock_history
 from decimal import Decimal
 import json
@@ -150,7 +150,7 @@ def delete_stock_data_api(request):
 @login_required
 def strategy_backtest_list(request, strategy_id):
     """策略回测结果列表页面"""
-    strategy = get_object_or_404(Strategy, id=strategy_id)
+    strategy = get_object_or_404(QuantStrategy, id=strategy_id)
 
     # 验证用户是否为策略所有者
     if strategy.owner != request.user:
@@ -199,10 +199,10 @@ def trigger_backtest(request):
 
         # 验证策略所有权
         try:
-            strategy = Strategy.objects.get(id=strategy_id)
+            strategy = QuantStrategy.objects.get(id=strategy_id)
             if strategy.owner != request.user:
                 return JsonResponse({'status': 'error', 'message': '无权操作此策略'}, status=403)
-        except Strategy.DoesNotExist:
+        except QuantStrategy.DoesNotExist:
             return JsonResponse({'status': 'error', 'message': '策略不存在'}, status=404)
 
         # 输入格式验证

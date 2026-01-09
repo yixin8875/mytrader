@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import StockData, Strategy, BacktestResult, TradeOrder
+from .models import StockData, QuantStrategy, BacktestResult, TradeOrder
 
 
 @admin.register(StockData)
@@ -12,8 +12,8 @@ class StockDataAdmin(admin.ModelAdmin):
     ordering = ['-date', 'symbol']
 
 
-@admin.register(Strategy)
-class StrategyAdmin(admin.ModelAdmin):
+@admin.register(QuantStrategy)
+class QuantStrategyAdmin(admin.ModelAdmin):
     list_display = ['name', 'owner', 'strategy_type', 'status', 'initial_capital', 'updated_at']
     list_filter = ['strategy_type', 'status', 'owner']
     search_fields = ['name', 'description']
