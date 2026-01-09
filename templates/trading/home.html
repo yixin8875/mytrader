@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#10B981">
+    <meta name="theme-color" content="#0F172A">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="MyTrader">
     <link rel="manifest" href="/static/trading/manifest.json">
     <link rel="apple-touch-icon" href="/static/trading/icons/icon-192.png">
@@ -13,33 +13,86 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
                 extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
                     colors: {
-                        primary: '#10B981',
+                        primary: '#3B82F6',
+                        secondary: '#60A5FA',
+                        accent: '#F59E0B',
+                        success: '#10B981',
                         danger: '#EF4444',
+                        dark: {
+                            900: '#0F172A',
+                            800: '#1E293B',
+                            700: '#334155',
+                            600: '#475569',
+                        }
                     }
                 }
             }
         }
     </script>
     <style>
-        /* 深色模式样式 */
-        .dark body { background-color: #1a1a2e; }
-        .dark .bg-white { background-color: #16213e; }
-        .dark .bg-gray-100 { background-color: #1a1a2e; }
-        .dark .bg-gray-50 { background-color: #0f3460; }
-        .dark .text-gray-800, .dark .text-gray-700, .dark .text-gray-600 { color: #e4e4e7; }
-        .dark .text-gray-500, .dark .text-gray-400 { color: #a1a1aa; }
-        .dark .border-gray-200, .dark .border { border-color: #374151; }
-        .dark .hover\\:bg-gray-100:hover { background-color: #374151; }
-        .dark .hover\\:bg-emerald-50:hover { background-color: rgba(16, 185, 129, 0.2); }
-        .dark .shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
-        .dark .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+        }
 
+        /* 渐变背景 */
+        .gradient-bg {
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #0F172A 100%);
+        }
+
+        /* 玻璃拟态卡片 */
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .glass-card-light {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        /* 渐变边框 */
+        .gradient-border {
+            position: relative;
+        }
+        .gradient-border::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.5), rgba(139, 92, 246, 0.5));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+
+        /* 数据卡片悬停效果 */
+        .stat-card {
+            transition: all 0.3s ease;
+        }
+        .stat-card:hover {
+            transform: translateY(-4px);
+        }
+
+        /* 侧边栏样式 */
         .sidebar-submenu {
             max-height: 0;
             overflow: hidden;
@@ -49,68 +102,134 @@
             max-height: 500px;
         }
         .sidebar-item.active > a {
-            background-color: rgb(16 185 129 / 0.1);
-            color: #10B981;
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.15), transparent);
+            color: #3B82F6;
+            border-left: 3px solid #3B82F6;
         }
         .sidebar-item.active > a svg {
-            color: #10B981;
+            color: #3B82F6;
         }
+
+        /* 深色模式 */
+        .dark .glass-card-light {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* 浅色模式 */
+        :not(.dark) .gradient-bg {
+            background: linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 50%, #F8FAFC 100%);
+        }
+        :not(.dark) .glass-card {
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        :not(.dark) .text-white { color: #1E293B; }
+        :not(.dark) .text-slate-300 { color: #64748B; }
+        :not(.dark) .text-slate-400 { color: #94A3B8; }
 
         /* 快捷键提示框 */
         #shortcut-help {
-            backdrop-filter: blur(4px);
+            backdrop-filter: blur(8px);
+        }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 116, 139, 0.5);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(100, 116, 139, 0.7);
+        }
+
+        /* 动画 */
+        @keyframes pulse-slow {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 3s ease-in-out infinite;
+        }
+
+        /* 减少动画 */
+        @media (prefers-reduced-motion: reduce) {
+            .stat-card:hover {
+                transform: none;
+            }
+            .animate-pulse-slow {
+                animation: none;
+            }
         }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
+<body class="gradient-bg min-h-screen dark">
     <!-- 顶部导航栏 -->
-    <nav class="bg-white shadow-lg fixed top-0 left-0 right-0 z-30">
-        <div class="px-4">
+    <nav class="glass-card fixed top-4 left-4 right-4 z-30 rounded-2xl">
+        <div class="px-6">
             <div class="flex justify-between h-16">
                 <div class="flex items-center">
-                    <button id="sidebar-toggle" class="p-2 rounded-lg hover:bg-gray-100 mr-3">
-                        <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <button id="sidebar-toggle" class="p-2 rounded-xl hover:bg-white/10 mr-3 transition-colors cursor-pointer">
+                        <svg class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
                         </svg>
                     </button>
-                    <span class="text-2xl font-bold text-emerald-600">MyTrader</span>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                            </svg>
+                        </div>
+                        <span class="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">MyTrader</span>
+                    </div>
                 </div>
-                <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-3">
                     {% if user.is_authenticated %}
                     <!-- 主题切换 -->
-                    <button id="theme-toggle" class="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition" title="切换主题 (T)">
+                    <button id="theme-toggle" class="p-2.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer" title="切换主题 (T)">
                         <i class="fas fa-moon" id="theme-icon"></i>
                     </button>
                     <!-- 设置 -->
-                    <a href="{% url 'settings' %}" class="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition" title="设置 (G S)">
+                    <a href="{% url 'settings' %}" class="p-2.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors" title="设置 (G S)">
                         <i class="fas fa-cog"></i>
                     </a>
                     <!-- 通知铃铛 -->
                     <div class="relative" id="notification-dropdown">
-                        <button onclick="toggleNotificationDropdown()" class="relative p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button onclick="toggleNotificationDropdown()" class="relative p-2.5 text-slate-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors cursor-pointer">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
                             </svg>
-                            <span id="notification-badge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">0</span>
+                            <span id="notification-badge" class="hidden absolute -top-0.5 -right-0.5 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium animate-pulse-slow">0</span>
                         </button>
                         <!-- 通知下拉框 -->
-                        <div id="notification-panel" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border z-50">
-                            <div class="p-3 border-b flex justify-between items-center">
-                                <h3 class="font-semibold text-gray-800">通知</h3>
-                                <button onclick="markAllRead()" class="text-xs text-emerald-600 hover:text-emerald-700">全部已读</button>
+                        <div id="notification-panel" class="hidden absolute right-0 mt-2 w-80 glass-card rounded-xl shadow-2xl z-50">
+                            <div class="p-4 border-b border-white/10 flex justify-between items-center">
+                                <h3 class="font-semibold text-white">通知</h3>
+                                <button onclick="markAllRead()" class="text-xs text-blue-400 hover:text-blue-300 cursor-pointer">全部已读</button>
                             </div>
                             <div id="notification-list" class="max-h-96 overflow-y-auto">
-                                <div class="p-4 text-center text-gray-400">加载中...</div>
+                                <div class="p-4 text-center text-slate-400">加载中...</div>
                             </div>
-                            <div class="p-3 border-t text-center">
-                                <a href="{% url 'notifications' %}" class="text-sm text-emerald-600 hover:text-emerald-700">查看全部通知</a>
+                            <div class="p-3 border-t border-white/10 text-center">
+                                <a href="{% url 'notifications' %}" class="text-sm text-blue-400 hover:text-blue-300">查看全部通知</a>
                             </div>
                         </div>
                     </div>
-                    <span class="text-gray-600">{{ user.username }}</span>
-                    <a href="{% url 'admin:logout' %}" class="text-gray-600 hover:text-gray-800">退出</a>
+                    <div class="flex items-center space-x-3 pl-3 border-l border-white/10">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+                            {{ user.username|slice:":1"|upper }}
+                        </div>
+                        <span class="text-slate-300 text-sm hidden sm:block">{{ user.username }}</span>
+                        <a href="{% url 'admin:logout' %}" class="text-slate-400 hover:text-white text-sm transition-colors">退出</a>
+                    </div>
                     {% else %}
-                    <a href="{% url 'admin:login' %}" class="bg-emerald-500 text-white px-4 py-2 rounded-lg hover:bg-emerald-600 transition">登录</a>
+                    <a href="{% url 'admin:login' %}" class="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-5 py-2 rounded-xl hover:opacity-90 transition font-medium">登录</a>
                     {% endif %}
                 </div>
             </div>
@@ -118,12 +237,12 @@
     </nav>
 
     <!-- 左侧抽屉栏 -->
-    <aside id="sidebar" class="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-white shadow-lg z-20 transform transition-transform duration-300 overflow-y-auto">
+    <aside id="sidebar" class="fixed left-4 top-24 h-[calc(100vh-7rem)] w-64 glass-card rounded-2xl z-20 transform transition-transform duration-300 overflow-y-auto">
         <nav class="py-4">
             <!-- 仪表盘 -->
             <div class="sidebar-item active">
-                <a href="#dashboard" class="flex items-center px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="showSection('dashboard')">
-                    <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <a href="#dashboard" class="flex items-center px-5 py-3 text-slate-300 hover:bg-white/5 transition-colors cursor-pointer" onclick="showSection('dashboard')">
+                    <svg class="w-5 h-5 mr-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
                     </svg>
                     仪表盘
@@ -132,22 +251,22 @@
 
             <!-- 交易管理 -->
             <div class="sidebar-item">
-                <a href="javascript:void(0)" class="flex items-center justify-between px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="toggleSubmenu(this)">
+                <a href="javascript:void(0)" class="flex items-center justify-between px-5 py-3 text-slate-300 hover:bg-white/5 transition-colors cursor-pointer" onclick="toggleSubmenu(this)">
                     <div class="flex items-center">
-                        <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="w-5 h-5 mr-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
                         </svg>
                         交易管理
                     </div>
-                    <svg class="w-4 h-4 text-gray-400 submenu-arrow transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-4 h-4 text-slate-500 submenu-arrow transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                     </svg>
                 </a>
-                <div class="sidebar-submenu bg-gray-50">
-                    <a href="{% url 'admin:trading_tradelog_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">交易记录</a>
-                    <a href="{% url 'admin:trading_tradereview_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">交易复盘</a>
-                    <a href="{% url 'admin:trading_position_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">持仓管理</a>
-                    <a href="{% url 'admin:trading_symbol_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">交易标的</a>
+                <div class="sidebar-submenu bg-white/5">
+                    <a href="{% url 'admin:trading_tradelog_changelist' %}" class="block px-12 py-2 text-sm text-slate-400 hover:text-blue-400 hover:bg-white/5 transition-colors">交易记录</a>
+                    <a href="{% url 'admin:trading_tradereview_changelist' %}" class="block px-12 py-2 text-sm text-slate-400 hover:text-blue-400 hover:bg-white/5 transition-colors">交易复盘</a>
+                    <a href="{% url 'admin:trading_position_changelist' %}" class="block px-12 py-2 text-sm text-slate-400 hover:text-blue-400 hover:bg-white/5 transition-colors">持仓管理</a>
+                    <a href="{% url 'admin:trading_symbol_changelist' %}" class="block px-12 py-2 text-sm text-slate-400 hover:text-blue-400 hover:bg-white/5 transition-colors">交易标的</a>
                 </div>
             </div>
 
