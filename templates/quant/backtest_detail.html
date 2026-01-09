@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ result.name }} - 回测详情</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 24px; color: #333; }
+        .header a { color: #1890ff; text-decoration: none; }
+        .card { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 18px; margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }
+        .metric { text-align: center; padding: 15px; background: #fafafa; border-radius: 8px; }
+        .metric-value { font-size: 28px; font-weight: bold; color: #333; }
+        .metric-label { font-size: 14px; color: #666; margin-top: 5px; }
+        .positive { color: #52c41a !important; }
+        .negative { color: #f5222d !important; }
+        #chart { width: 100%; height: 400px; }
+        .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        .info-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+        .info-label { color: #666; }
+        .info-value { color: #333; font-weight: 500; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ result.name|default:"回测详情" }}</h1>
+            <a href="{% url 'strategy_backtest_list' result.strategy.id %}">← 返回列表</a>
+        </div>
+
+        <div class="card">
+            <h2>核心指标</h2>
+            <div class="metrics">
+                <div class="metric">
+                    <div class="metric-value {% if result.total_return >= 0 %}positive{% else %}negative{% endif %}">
+                        {{ result.total_return|floatformat:2 }}%
+                    </div>
+                    <div class="metric-label">总收益率</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{{ result.sharpe_ratio|floatformat:2|default:"-" }}</div>
+                    <div class="metric-label">夏普比率</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value negative">{{ result.max_drawdown|floatformat:2 }}%</div>
+                    <div class="metric-label">最大回撤</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{{ result.win_rate|floatformat:1|default:"-" }}%</div>
+                    <div class="metric-label">胜率</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">{{ result.total_trades }}</div>
+                    <div class="metric-label">总交易次数</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value {% if result.net_profit >= 0 %}positive{% else %}negative{% endif %}">
+                        {{ result.net_profit|floatformat:2 }}
+                    </div>
+                    <div class="metric-label">净利润</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>收益曲线</h2>
+            <div id="chart"></div>
+        </div>
+
+        <div class="card">
+            <h2>回测信息</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">策略名称</span>
+                    <span class="info-value">{{ result.strategy.name }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">回测周期</span>
+                    <span class="info-value">{{ result.start_date }} ~ {{ result.end_date }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">初始资金</span>
+                    <span class="info-value">{{ result.initial_capital|floatformat:2 }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">最终资金</span>
+                    <span class="info-value">{{ result.final_capital|floatformat:2 }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">年化收益率</span>
+                    <span class="info-value">{{ result.annual_return|floatformat:2|default:"-" }}%</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">盈亏比</span>
+                    <span class="info-value">{{ result.profit_factor|floatformat:2|default:"-" }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">盈利次数</span>
+                    <span class="info-value positive">{{ result.winning_trades }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">亏损次数</span>
+                    <span class="info-value negative">{{ result.losing_trades }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const equityCurve = {{ equity_curve_json|safe }};
+        const chart = echarts.init(document.getElementById('chart'));
+
+        const dates = equityCurve.map(item => item.date);
+        const values = equityCurve.map(item => item.value);
+
+        const option = {
+            tooltip: {
+                trigger: 'axis',
+                formatter: function(params) {
+                    const p = params[0];
+                    return `${p.name}<br/>净值: ${p.value.toFixed(2)}`;
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '4%',
+                bottom: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                boundaryGap: false,
+                data: dates,
+                axisLine: { lineStyle: { color: '#ddd' } },
+                axisLabel: { color: '#666' }
+            },
+            yAxis: {
+                type: 'value',
+                axisLine: { show: false },
+                axisLabel: { color: '#666' },
+                splitLine: { lineStyle: { color: '#f0f0f0' } }
+            },
+            series: [{
+                name: '净值',
+                type: 'line',
+                smooth: true,
+                symbol: 'none',
+                areaStyle: {
+                    color: {
+                        type: 'linear',
+                        x: 0, y: 0, x2: 0, y2: 1,
+                        colorStops: [
+                            { offset: 0, color: 'rgba(24, 144, 255, 0.3)' },
+                            { offset: 1, color: 'rgba(24, 144, 255, 0.05)' }
+                        ]
+                    }
+                },
+                lineStyle: { color: '#1890ff', width: 2 },
+                data: values
+            }]
+        };
+
+        chart.setOption(option);
+        window.addEventListener('resize', () => chart.resize());
+    </script>
+</body>
+</html>

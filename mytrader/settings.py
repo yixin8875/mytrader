@@ -38,7 +38,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_celery_beat',
     'trading',
+    'quant',
 ]
 
 MIDDLEWARE = [
@@ -145,6 +147,7 @@ JAZZMIN_SETTINGS = {
         {'model': 'trading.Strategy', 'label': '交易策略'},
         {'model': 'trading.Position', 'label': '持仓管理'},
         {'model': 'trading.TradeLog', 'label': '交易日志'},
+        {'model': 'trading.TradeReview', 'label': '交易复盘'},
         {'app': 'trading', 'label': '报表分析', 'items': [
             {'model': 'trading.DailyReport'},
             {'model': 'trading.MonthlyReport'},
@@ -181,13 +184,26 @@ JAZZMIN_SETTINGS = {
         'trading.Symbol': 'fas fa-tags',
         'trading.Strategy': 'fas fa-chess',
         'trading.TradeLog': 'fas fa-list-alt',
+        'trading.TradeReview': 'fas fa-book-reader',
         'trading.Position': 'fas fa-balance-scale',
         'trading.DailyReport': 'fas fa-calendar-day',
         'trading.MonthlyReport': 'fas fa-calendar-alt',
         'trading.PerformanceMetrics': 'fas fa-chart-bar',
+        'trading.RiskRule': 'fas fa-shield-alt',
+        'trading.RiskAlert': 'fas fa-exclamation-triangle',
+        'trading.RiskSnapshot': 'fas fa-camera',
+        'trading.TradePlan': 'fas fa-clipboard-list',
+        'trading.WatchlistGroup': 'fas fa-eye',
+        'trading.WatchlistItem': 'fas fa-star',
+        'trading.DailyNote': 'fas fa-sticky-note',
         'auth': 'fas fa-users',
         'auth.User': 'fas fa-user',
         'auth.Group': 'fas fa-users-cog',
+        'quant': 'fas fa-robot',
+        'quant.StockData': 'fas fa-database',
+        'quant.Strategy': 'fas fa-brain',
+        'quant.BacktestResult': 'fas fa-chart-area',
+        'quant.TradeOrder': 'fas fa-file-invoice-dollar',
     },
 
     # 列表每页显示数量
@@ -199,3 +215,13 @@ JAZZMIN_SETTINGS = {
     # 是否显示保存并添加另一个按钮
     'save_on_top': True,
 }
+
+# Celery 配置
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Shanghai'
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+

@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深度分析 - MyTrader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#10B981',
+                        danger: '#EF4444',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- 顶部导航栏 -->
+    <nav class="bg-white shadow-lg fixed top-0 left-0 right-0 z-30">
+        <div class="px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="{% url 'home' %}" class="text-2xl font-bold text-emerald-600">MyTrader</a>
+                    <span class="ml-4 text-gray-500">/ 深度分析</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    {% if user.is_authenticated %}
+                    <span class="text-gray-600">{{ user.username }}</span>
+                    <a href="{% url 'home' %}" class="text-gray-600 hover:text-gray-800">返回首页</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="pt-20 pb-8">
+        <div class="max-w-7xl mx-auto px-4">
+            <!-- 筛选条件 -->
+            <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">筛选条件</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">账户</label>
+                        <select id="filter-account" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                            <option value="">全部账户</option>
+                            {% for account in accounts %}
+                            <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">开始日期</label>
+                        <input type="date" id="filter-start" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">结束日期</label>
+                        <input type="date" id="filter-end" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <div class="flex items-end">
+                        <button onclick="loadAnalytics()" class="w-full bg-emerald-500 text-white py-2 rounded-lg hover:bg-emerald-600 transition">
+                            分析
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 核心指标摘要 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <p class="text-gray-500 text-sm">总交易</p>
+                    <p class="text-2xl font-bold text-gray-800" id="stat-trades">--</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <p class="text-gray-500 text-sm">胜率</p>
+                    <p class="text-2xl font-bold text-emerald-600" id="stat-winrate">--</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <p class="text-gray-500 text-sm">总盈亏</p>
+                    <p class="text-2xl font-bold" id="stat-pnl">--</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <p class="text-gray-500 text-sm">盈亏比</p>
+                    <p class="text-2xl font-bold text-blue-600" id="stat-factor">--</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <p class="text-gray-500 text-sm">期望值</p>
+                    <p class="text-2xl font-bold" id="stat-expectancy">--</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <p class="text-gray-500 text-sm">最大连亏</p>
+                    <p class="text-2xl font-bold text-red-500" id="stat-maxloss">--</p>
+                </div>
+            </div>
+
+            <!-- 分析图表区 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- 时段分析 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">时段分析</h3>
+                    <canvas id="hourChart" height="200"></canvas>
+                </div>
+                <!-- 星期分析 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">星期分析</h3>
+                    <canvas id="weekdayChart" height="200"></canvas>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- 月度分析 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">月度盈亏</h3>
+                    <canvas id="monthChart" height="200"></canvas>
+                </div>
+                <!-- 盈亏分布 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">盈亏分布</h3>
+                    <canvas id="distributionChart" height="200"></canvas>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- 方向分析 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">方向分析</h3>
+                    <canvas id="sideChart" height="200"></canvas>
+                </div>
+                <!-- 品种类型分析 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">品种类型分析</h3>
+                    <canvas id="typeChart" height="200"></canvas>
+                </div>
+            </div>
+
+            <!-- 详细数据表格 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- 品种排行 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">品种排行</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-gray-500 border-b">
+                                    <th class="pb-3">品种</th>
+                                    <th class="pb-3">交易数</th>
+                                    <th class="pb-3">胜率</th>
+                                    <th class="pb-3">盈亏</th>
+                                </tr>
+                            </thead>
+                            <tbody id="symbol-table">
+                                <tr><td colspan="4" class="py-4 text-center text-gray-400">加载中...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 策略排行 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">策略排行</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-gray-500 border-b">
+                                    <th class="pb-3">策略</th>
+                                    <th class="pb-3">交易数</th>
+                                    <th class="pb-3">胜率</th>
+                                    <th class="pb-3">盈亏比</th>
+                                    <th class="pb-3">盈亏</th>
+                                </tr>
+                            </thead>
+                            <tbody id="strategy-table">
+                                <tr><td colspan="5" class="py-4 text-center text-gray-400">加载中...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 连续统计 -->
+            <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">连续统计</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div class="bg-emerald-50 rounded-lg p-4 text-center">
+                        <p class="text-sm text-gray-600">最大连胜</p>
+                        <p class="text-3xl font-bold text-emerald-600" id="streak-win">--</p>
+                    </div>
+                    <div class="bg-red-50 rounded-lg p-4 text-center">
+                        <p class="text-sm text-gray-600">最大连亏</p>
+                        <p class="text-3xl font-bold text-red-500" id="streak-loss">--</p>
+                    </div>
+                    <div class="bg-blue-50 rounded-lg p-4 text-center">
+                        <p class="text-sm text-gray-600">当前连续</p>
+                        <p class="text-3xl font-bold text-blue-600" id="streak-current">--</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-4 text-center">
+                        <p class="text-sm text-gray-600">连续类型</p>
+                        <p class="text-2xl font-bold text-gray-700" id="streak-type">--</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 最佳/最差分析 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-emerald-600 mb-4">最佳表现</h3>
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center p-3 bg-emerald-50 rounded-lg">
+                            <span class="text-gray-700">最佳品种</span>
+                            <span class="font-semibold text-emerald-600" id="best-symbol">--</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-emerald-50 rounded-lg">
+                            <span class="text-gray-700">最佳时段</span>
+                            <span class="font-semibold text-emerald-600" id="best-hour">--</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-emerald-50 rounded-lg">
+                            <span class="text-gray-700">单笔最大盈利</span>
+                            <span class="font-semibold text-emerald-600" id="max-profit">--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-red-500 mb-4">最差表现</h3>
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center p-3 bg-red-50 rounded-lg">
+                            <span class="text-gray-700">最差品种</span>
+                            <span class="font-semibold text-red-500" id="worst-symbol">--</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-red-50 rounded-lg">
+                            <span class="text-gray-700">最差时段</span>
+                            <span class="font-semibold text-red-500" id="worst-hour">--</span>
+                        </div>
+                        <div class="flex justify-between items-center p-3 bg-red-50 rounded-lg">
+                            <span class="text-gray-700">单笔最大亏损</span>
+                            <span class="font-semibold text-red-500" id="max-loss">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-white border-t mt-8">
+        <div class="max-w-7xl mx-auto px-4 py-6 text-center text-gray-500 text-sm">
+            MyTrader 交易管理系统 &copy; 2025
+        </div>
+    </footer>
+
+    <script>
+        // 图表实例存储
+        let charts = {};
+
+        // 加载分析数据
+        function loadAnalytics() {
+            const account = document.getElementById('filter-account').value;
+            const startDate = document.getElementById('filter-start').value;
+            const endDate = document.getElementById('filter-end').value;
+
+            const params = new URLSearchParams();
+            if (account) params.append('account', account);
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            params.append('type', 'full');
+
+            fetch(`{% url 'api_analytics' %}?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => {
+                    updateDashboard(data);
+                })
+                .catch(err => console.error('加载分析数据失败:', err));
+        }
+
+        // 更新仪表盘
+        function updateDashboard(data) {
+            // 更新摘要指标
+            const summary = data.summary;
+            if (summary && summary.basic) {
+                document.getElementById('stat-trades').textContent = summary.basic.total_trades;
+                document.getElementById('stat-winrate').textContent = summary.basic.win_rate + '%';
+
+                const pnlEl = document.getElementById('stat-pnl');
+                pnlEl.textContent = formatCurrency(summary.basic.total_pnl);
+                pnlEl.className = 'text-2xl font-bold ' + (summary.basic.total_pnl >= 0 ? 'text-emerald-600' : 'text-red-500');
+
+                document.getElementById('stat-factor').textContent = summary.ratios.profit_factor;
+
+                const expectEl = document.getElementById('stat-expectancy');
+                expectEl.textContent = formatCurrency(summary.ratios.expectancy);
+                expectEl.className = 'text-2xl font-bold ' + (summary.ratios.expectancy >= 0 ? 'text-emerald-600' : 'text-red-500');
+
+                document.getElementById('stat-maxloss').textContent = summary.streaks.max_loss_streak;
+
+                // 最佳/最差
+                if (summary.best_symbol) {
+                    document.getElementById('best-symbol').textContent = summary.best_symbol.symbol_code + ' (+' + formatCurrency(summary.best_symbol.total_pnl) + ')';
+                }
+                if (summary.worst_symbol) {
+                    document.getElementById('worst-symbol').textContent = summary.worst_symbol.symbol_code + ' (' + formatCurrency(summary.worst_symbol.total_pnl) + ')';
+                }
+                if (summary.best_hour) {
+                    document.getElementById('best-hour').textContent = summary.best_hour.hour_display + ' (+' + formatCurrency(summary.best_hour.total_pnl) + ')';
+                }
+                if (summary.worst_hour) {
+                    document.getElementById('worst-hour').textContent = summary.worst_hour.hour_display + ' (' + formatCurrency(summary.worst_hour.total_pnl) + ')';
+                }
+                document.getElementById('max-profit').textContent = formatCurrency(summary.basic.max_profit);
+                document.getElementById('max-loss').textContent = formatCurrency(summary.basic.max_loss);
+            }
+
+            // 更新连续统计
+            if (data.streaks) {
+                document.getElementById('streak-win').textContent = data.streaks.max_win_streak;
+                document.getElementById('streak-loss').textContent = data.streaks.max_loss_streak;
+                document.getElementById('streak-current').textContent = data.streaks.current_streak;
+                const typeMap = {'win': '连胜', 'loss': '连亏', 'even': '平局'};
+                document.getElementById('streak-type').textContent = typeMap[data.streaks.current_streak_type] || '--';
+            }
+
+            // 更新图表
+            updateHourChart(data.by_hour);
+            updateWeekdayChart(data.by_weekday);
+            updateMonthChart(data.by_month);
+            updateDistributionChart(data.pnl_distribution);
+            updateSideChart(data.by_side);
+            updateTypeChart(data.by_symbol_type);
+
+            // 更新表格
+            updateSymbolTable(data.by_symbol);
+            updateStrategyTable(data.by_strategy);
+        }
+
+        // 时段图表
+        function updateHourChart(data) {
+            if (!data || data.length === 0) return;
+
+            if (charts.hour) charts.hour.destroy();
+
+            const labels = data.map(d => d.hour_display);
+            const pnlValues = data.map(d => d.total_pnl);
+            const winRates = data.map(d => d.win_rate);
+
+            charts.hour = new Chart(document.getElementById('hourChart'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '盈亏',
+                        data: pnlValues,
+                        backgroundColor: pnlValues.map(v => v >= 0 ? '#10B981' : '#EF4444'),
+                        yAxisID: 'y'
+                    }, {
+                        label: '胜率',
+                        data: winRates,
+                        type: 'line',
+                        borderColor: '#3B82F6',
+                        backgroundColor: 'transparent',
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { position: 'left' },
+                        y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+
+        // 星期图表
+        function updateWeekdayChart(data) {
+            if (!data || data.length === 0) return;
+
+            if (charts.weekday) charts.weekday.destroy();
+
+            const labels = data.map(d => d.weekday_name);
+            const pnlValues = data.map(d => d.total_pnl);
+
+            charts.weekday = new Chart(document.getElementById('weekdayChart'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '盈亏',
+                        data: pnlValues,
+                        backgroundColor: pnlValues.map(v => v >= 0 ? '#10B981' : '#EF4444')
+                    }]
+                },
+                options: { responsive: true }
+            });
+        }
+
+        // 月度图表
+        function updateMonthChart(data) {
+            if (!data || data.length === 0) return;
+
+            if (charts.month) charts.month.destroy();
+
+            const labels = data.map(d => d.month).reverse();
+            const values = data.map(d => d.total_pnl).reverse();
+
+            charts.month = new Chart(document.getElementById('monthChart'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '月度盈亏',
+                        data: values,
+                        backgroundColor: values.map(v => v >= 0 ? '#10B981' : '#EF4444')
+                    }]
+                },
+                options: { responsive: true }
+            });
+        }
+
+        // 盈亏分布图表
+        function updateDistributionChart(data) {
+            if (!data || !data.buckets || data.buckets.length === 0) return;
+
+            if (charts.distribution) charts.distribution.destroy();
+
+            const labels = data.buckets.map(d => d.range);
+            const values = data.buckets.map(d => d.count);
+
+            charts.distribution = new Chart(document.getElementById('distributionChart'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '交易次数',
+                        data: values,
+                        backgroundColor: '#3B82F6'
+                    }]
+                },
+                options: { responsive: true }
+            });
+        }
+
+        // 方向分析图表
+        function updateSideChart(data) {
+            if (!data || data.length === 0) return;
+
+            if (charts.side) charts.side.destroy();
+
+            const labels = data.map(d => d.side_name);
+            const pnlValues = data.map(d => d.total_pnl);
+            const winRates = data.map(d => d.win_rate);
+
+            charts.side = new Chart(document.getElementById('sideChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data.map(d => d.total_trades),
+                        backgroundColor: ['#EF4444', '#10B981']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+        }
+
+        // 品种类型图表
+        function updateTypeChart(data) {
+            if (!data || data.length === 0) return;
+
+            if (charts.type) charts.type.destroy();
+
+            const labels = data.map(d => d.type_name);
+            const values = data.map(d => d.total_pnl);
+
+            charts.type = new Chart(document.getElementById('typeChart'), {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data.map(d => d.total_trades),
+                        backgroundColor: ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899', '#14B8A6', '#F97316']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+        }
+
+        // 品种表格
+        function updateSymbolTable(data) {
+            const tbody = document.getElementById('symbol-table');
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-gray-400">暂无数据</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.slice(0, 10).map(s => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="py-2 font-medium">${s.symbol_code}</td>
+                    <td class="py-2">${s.total_trades}</td>
+                    <td class="py-2">${s.win_rate}%</td>
+                    <td class="py-2 ${s.total_pnl >= 0 ? 'text-emerald-600' : 'text-red-500'}">${formatCurrency(s.total_pnl)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // 策略表格
+        function updateStrategyTable(data) {
+            const tbody = document.getElementById('strategy-table');
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-gray-400">暂无数据</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.map(s => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="py-2 font-medium">${s.strategy_name}</td>
+                    <td class="py-2">${s.total_trades}</td>
+                    <td class="py-2">${s.win_rate}%</td>
+                    <td class="py-2">${s.profit_factor}</td>
+                    <td class="py-2 ${s.total_pnl >= 0 ? 'text-emerald-600' : 'text-red-500'}">${formatCurrency(s.total_pnl)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // 格式化货币
+        function formatCurrency(value) {
+            if (value === null || value === undefined) return '--';
+            const prefix = value >= 0 ? '' : '';
+            return prefix + '¥' + value.toLocaleString('zh-CN', {maximumFractionDigits: 2});
+        }
+
+        // 页面加载时执行
+        document.addEventListener('DOMContentLoaded', function() {
+            // 设置默认日期范围（最近3个月）
+            const today = new Date();
+            const threeMonthsAgo = new Date(today);
+            threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+            document.getElementById('filter-end').value = today.toISOString().split('T')[0];
+            document.getElementById('filter-start').value = threeMonthsAgo.toISOString().split('T')[0];
+
+            // 加载数据
+            loadAnalytics();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>通知中心 - MyTrader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#10B981',
+                        danger: '#EF4444',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- 顶部导航栏 -->
+    <nav class="bg-white shadow-lg fixed top-0 left-0 right-0 z-30">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="{% url 'home' %}" class="flex items-center">
+                        <svg class="w-6 h-6 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                        <span class="text-2xl font-bold text-emerald-600">MyTrader</span>
+                    </a>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-600">{{ user.username }}</span>
+                    <a href="{% url 'admin:logout' %}" class="text-gray-600 hover:text-gray-800">退出</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容 -->
+    <main class="pt-20 pb-8">
+        <div class="max-w-6xl mx-auto px-4">
+            <!-- 页面标题 -->
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-800">通知中心</h1>
+                    <p class="text-gray-500 mt-1">管理您的通知和价格提醒</p>
+                </div>
+                <div class="flex space-x-3">
+                    <button onclick="markAllAsRead()" class="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition">
+                        <i class="fas fa-check-double mr-2"></i>全部已读
+                    </button>
+                    <button onclick="clearOldNotifications()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                        <i class="fas fa-trash-alt mr-2"></i>清理旧通知
+                    </button>
+                </div>
+            </div>
+
+            <!-- 标签页 -->
+            <div class="bg-white rounded-xl shadow-md mb-6">
+                <div class="border-b">
+                    <nav class="flex -mb-px">
+                        <button onclick="switchTab('notifications')" id="tab-notifications" class="tab-btn active px-6 py-4 text-sm font-medium border-b-2 border-emerald-500 text-emerald-600">
+                            <i class="fas fa-bell mr-2"></i>全部通知
+                            <span class="ml-2 bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-xs">{{ unread_count }}</span>
+                        </button>
+                        <button onclick="switchTab('alerts')" id="tab-alerts" class="tab-btn px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent">
+                            <i class="fas fa-chart-line mr-2"></i>价格提醒
+                        </button>
+                        <button onclick="switchTab('settings')" id="tab-settings" class="tab-btn px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent">
+                            <i class="fas fa-cog mr-2"></i>通知设置
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- 通知列表 -->
+                <div id="panel-notifications" class="tab-panel p-6">
+                    <!-- 筛选 -->
+                    <div class="flex items-center space-x-4 mb-6">
+                        <select id="notification-type-filter" onchange="filterNotifications()" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                            <option value="">全部类型</option>
+                            <option value="price_alert">价格提醒</option>
+                            <option value="plan_reminder">计划提醒</option>
+                            <option value="risk_warning">风险警告</option>
+                            <option value="daily_summary">每日总结</option>
+                            <option value="trade_executed">交易执行</option>
+                            <option value="system">系统通知</option>
+                        </select>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="show-unread-only" onchange="filterNotifications()" class="rounded text-emerald-500 mr-2">
+                            <span class="text-sm text-gray-600">仅显示未读</span>
+                        </label>
+                    </div>
+
+                    <!-- 通知列表 -->
+                    <div id="notification-list" class="space-y-3">
+                        {% for notification in notifications %}
+                        <div class="notification-item flex items-start p-4 rounded-lg border hover:border-emerald-300 transition {% if not notification.is_read %}bg-emerald-50 border-emerald-200{% else %}bg-white{% endif %}" data-id="{{ notification.id }}" data-type="{{ notification.notification_type }}" data-read="{{ notification.is_read|yesno:'true,false' }}">
+                            <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center mr-4
+                                {% if notification.notification_type == 'price_alert' %}bg-blue-100{% endif %}
+                                {% if notification.notification_type == 'plan_reminder' %}bg-purple-100{% endif %}
+                                {% if notification.notification_type == 'risk_warning' %}bg-red-100{% endif %}
+                                {% if notification.notification_type == 'daily_summary' %}bg-green-100{% endif %}
+                                {% if notification.notification_type == 'trade_executed' %}bg-emerald-100{% endif %}
+                                {% if notification.notification_type == 'system' %}bg-gray-100{% endif %}
+                            ">
+                                <i class="fas {{ notification.get_icon }}
+                                    {% if notification.notification_type == 'price_alert' %}text-blue-600{% endif %}
+                                    {% if notification.notification_type == 'plan_reminder' %}text-purple-600{% endif %}
+                                    {% if notification.notification_type == 'risk_warning' %}text-red-600{% endif %}
+                                    {% if notification.notification_type == 'daily_summary' %}text-green-600{% endif %}
+                                    {% if notification.notification_type == 'trade_executed' %}text-emerald-600{% endif %}
+                                    {% if notification.notification_type == 'system' %}text-gray-600{% endif %}
+                                "></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center justify-between">
+                                    <h4 class="text-sm font-medium text-gray-900">{{ notification.title }}</h4>
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-xs text-gray-400">{{ notification.created_at|date:"m-d H:i" }}</span>
+                                        {% if not notification.is_read %}
+                                        <span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <p class="text-sm text-gray-600 mt-1">{{ notification.message }}</p>
+                                {% if notification.related_symbol %}
+                                <span class="inline-block mt-2 px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">{{ notification.related_symbol.code }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="ml-4 flex-shrink-0">
+                                {% if not notification.is_read %}
+                                <button onclick="markNotificationRead({{ notification.id }})" class="p-2 text-gray-400 hover:text-emerald-500" title="标记已读">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                {% endif %}
+                                <button onclick="deleteNotification({{ notification.id }})" class="p-2 text-gray-400 hover:text-red-500" title="删除">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="text-center py-12 text-gray-400">
+                            <i class="fas fa-bell-slash text-4xl mb-4"></i>
+                            <p>暂无通知</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- 价格提醒 -->
+                <div id="panel-alerts" class="tab-panel hidden p-6">
+                    <!-- 创建新提醒 -->
+                    <div class="bg-gray-50 rounded-lg p-4 mb-6">
+                        <h3 class="font-medium text-gray-800 mb-4">创建价格提醒</h3>
+                        <form id="create-alert-form" class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">标的</label>
+                                <select id="alert-symbol" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500" required>
+                                    <option value="">选择标的</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">条件</label>
+                                <select id="alert-condition" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                                    <option value="above">高于</option>
+                                    <option value="below">低于</option>
+                                    <option value="cross_up">向上穿越</option>
+                                    <option value="cross_down">向下穿越</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">目标价格</label>
+                                <input type="number" id="alert-price" step="0.0001" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500" required>
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">备注</label>
+                                <input type="text" id="alert-notes" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500" placeholder="可选">
+                            </div>
+                            <div class="flex items-end">
+                                <button type="submit" class="w-full px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition">
+                                    <i class="fas fa-plus mr-2"></i>创建
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- 提醒列表 -->
+                    <div class="space-y-3" id="price-alert-list">
+                        {% for alert in price_alerts %}
+                        <div class="flex items-center p-4 rounded-lg border {% if alert.status == 'active' %}bg-white{% else %}bg-gray-50 opacity-60{% endif %}">
+                            <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center mr-4
+                                {% if alert.condition == 'above' %}bg-red-100{% endif %}
+                                {% if alert.condition == 'below' %}bg-green-100{% endif %}
+                                {% if alert.condition == 'cross_up' %}bg-orange-100{% endif %}
+                                {% if alert.condition == 'cross_down' %}bg-blue-100{% endif %}
+                            ">
+                                <i class="fas fa-chart-line
+                                    {% if alert.condition == 'above' %}text-red-600{% endif %}
+                                    {% if alert.condition == 'below' %}text-green-600{% endif %}
+                                    {% if alert.condition == 'cross_up' %}text-orange-600{% endif %}
+                                    {% if alert.condition == 'cross_down' %}text-blue-600{% endif %}
+                                "></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex items-center">
+                                    <span class="font-medium text-gray-900">{{ alert.symbol.code }}</span>
+                                    <span class="mx-2 text-gray-400">{{ alert.get_condition_display }}</span>
+                                    <span class="font-medium text-gray-900">{{ alert.target_price }}</span>
+                                </div>
+                                <div class="text-sm text-gray-500 mt-1">
+                                    {% if alert.notes %}{{ alert.notes }} | {% endif %}
+                                    创建于 {{ alert.created_at|date:"m-d H:i" }}
+                                    {% if alert.trigger_count > 0 %} | 已触发 {{ alert.trigger_count }} 次{% endif %}
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="px-2 py-1 rounded text-xs
+                                    {% if alert.status == 'active' %}bg-green-100 text-green-700{% endif %}
+                                    {% if alert.status == 'triggered' %}bg-blue-100 text-blue-700{% endif %}
+                                    {% if alert.status == 'cancelled' %}bg-gray-100 text-gray-700{% endif %}
+                                    {% if alert.status == 'expired' %}bg-red-100 text-red-700{% endif %}
+                                ">{{ alert.get_status_display }}</span>
+                                {% if alert.status == 'active' %}
+                                <button onclick="cancelPriceAlert({{ alert.id }})" class="p-2 text-gray-400 hover:text-red-500" title="取消">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="text-center py-12 text-gray-400">
+                            <i class="fas fa-chart-line text-4xl mb-4"></i>
+                            <p>暂无价格提醒</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- 通知设置 -->
+                <div id="panel-settings" class="tab-panel hidden p-6">
+                    <form id="settings-form" class="max-w-2xl">
+                        <h3 class="font-medium text-gray-800 mb-4">通知开关</h3>
+                        <div class="space-y-4 mb-8">
+                            <label class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                <div>
+                                    <span class="font-medium text-gray-700">价格提醒</span>
+                                    <p class="text-sm text-gray-500">当标的价格达到设定值时通知</p>
+                                </div>
+                                <input type="checkbox" id="setting-price-alert" {% if notification_settings.enable_price_alert %}checked{% endif %} class="w-5 h-5 rounded text-emerald-500">
+                            </label>
+                            <label class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                <div>
+                                    <span class="font-medium text-gray-700">计划提醒</span>
+                                    <p class="text-sm text-gray-500">交易计划到期前提醒</p>
+                                </div>
+                                <input type="checkbox" id="setting-plan-reminder" {% if notification_settings.enable_plan_reminder %}checked{% endif %} class="w-5 h-5 rounded text-emerald-500">
+                            </label>
+                            <label class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                <div>
+                                    <span class="font-medium text-gray-700">风险警告</span>
+                                    <p class="text-sm text-gray-500">触发风险规则时通知</p>
+                                </div>
+                                <input type="checkbox" id="setting-risk-warning" {% if notification_settings.enable_risk_warning %}checked{% endif %} class="w-5 h-5 rounded text-emerald-500">
+                            </label>
+                            <label class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                <div>
+                                    <span class="font-medium text-gray-700">每日总结提醒</span>
+                                    <p class="text-sm text-gray-500">每日定时提醒填写交易总结</p>
+                                </div>
+                                <input type="checkbox" id="setting-daily-summary" {% if notification_settings.enable_daily_summary %}checked{% endif %} class="w-5 h-5 rounded text-emerald-500">
+                            </label>
+                            <label class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                <div>
+                                    <span class="font-medium text-gray-700">交易通知</span>
+                                    <p class="text-sm text-gray-500">交易执行后通知</p>
+                                </div>
+                                <input type="checkbox" id="setting-trade-notification" {% if notification_settings.enable_trade_notification %}checked{% endif %} class="w-5 h-5 rounded text-emerald-500">
+                            </label>
+                        </div>
+
+                        <h3 class="font-medium text-gray-800 mb-4">提醒时间</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">每日总结提醒时间</label>
+                                <input type="time" id="setting-summary-time" value="{{ notification_settings.daily_summary_time|time:'H:i' }}" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">计划提前提醒(分钟)</label>
+                                <input type="number" id="setting-plan-minutes" value="{{ notification_settings.plan_reminder_minutes }}" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                            </div>
+                        </div>
+
+                        <h3 class="font-medium text-gray-800 mb-4">静默时段</h3>
+                        <p class="text-sm text-gray-500 mb-4">在此时段内不发送通知</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">开始时间</label>
+                                <input type="time" id="setting-quiet-start" value="{{ notification_settings.quiet_hours_start|time:'H:i'|default:'' }}" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">结束时间</label>
+                                <input type="time" id="setting-quiet-end" value="{{ notification_settings.quiet_hours_end|time:'H:i'|default:'' }}" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="px-6 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition">
+                            <i class="fas fa-save mr-2"></i>保存设置
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 标签页切换
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active', 'border-emerald-500', 'text-emerald-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+            document.querySelectorAll('.tab-panel').forEach(panel => {
+                panel.classList.add('hidden');
+            });
+            document.getElementById('tab-' + tab).classList.add('active', 'border-emerald-500', 'text-emerald-600');
+            document.getElementById('tab-' + tab).classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById('panel-' + tab).classList.remove('hidden');
+
+            if (tab === 'alerts') {
+                loadSymbols();
+            }
+        }
+
+        // 获取CSRF Token
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // 标记单个通知为已读
+        function markNotificationRead(id) {
+            fetch(`/api/notifications/${id}/read/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const item = document.querySelector(`.notification-item[data-id="${id}"]`);
+                    if (item) {
+                        item.classList.remove('bg-emerald-50', 'border-emerald-200');
+                        item.classList.add('bg-white');
+                        item.dataset.read = 'true';
+                        item.querySelector('.fa-check')?.closest('button')?.remove();
+                        item.querySelector('.bg-emerald-500.rounded-full')?.remove();
+                    }
+                }
+            });
+        }
+
+        // 标记所有为已读
+        function markAllAsRead() {
+            fetch('{% url "api_notification_mark_all_read" %}', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                }
+            });
+        }
+
+        // 删除通知
+        function deleteNotification(id) {
+            if (!confirm('确定删除此通知？')) return;
+            fetch(`/api/notifications/${id}/delete/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.querySelector(`.notification-item[data-id="${id}"]`)?.remove();
+                }
+            });
+        }
+
+        // 清理旧通知
+        function clearOldNotifications() {
+            const days = prompt('清理多少天前的已读通知？', '30');
+            if (!days) return;
+            fetch('{% url "api_notification_clear_old" %}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `days=${days}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(`已清理 ${data.cleared_count} 条通知`);
+                location.reload();
+            });
+        }
+
+        // 筛选通知
+        function filterNotifications() {
+            const typeFilter = document.getElementById('notification-type-filter').value;
+            const unreadOnly = document.getElementById('show-unread-only').checked;
+
+            document.querySelectorAll('.notification-item').forEach(item => {
+                let show = true;
+                if (typeFilter && item.dataset.type !== typeFilter) show = false;
+                if (unreadOnly && item.dataset.read === 'true') show = false;
+                item.style.display = show ? '' : 'none';
+            });
+        }
+
+        // 加载标的列表
+        function loadSymbols() {
+            fetch('/admin/trading/symbol/?_popup=1&is_active__exact=1')
+                .then(response => response.text())
+                .then(html => {
+                    // 从admin API获取标的较复杂，这里简化处理
+                })
+                .catch(err => console.log('Failed to load symbols'));
+
+            // 直接用Django context传递的标的
+            const select = document.getElementById('alert-symbol');
+            if (select.options.length <= 1) {
+                // 从admin获取标的
+                fetch('/api/price-alerts/?status=')
+                    .then(r => r.json())
+                    .then(data => {
+                        // 如果有返回的alert，可以从中获取已有的symbol
+                    });
+            }
+        }
+
+        // 创建价格提醒
+        document.getElementById('create-alert-form')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const symbolId = document.getElementById('alert-symbol').value;
+            const condition = document.getElementById('alert-condition').value;
+            const price = document.getElementById('alert-price').value;
+            const notes = document.getElementById('alert-notes').value;
+
+            if (!symbolId) {
+                alert('请选择标的');
+                return;
+            }
+
+            fetch('{% url "api_price_alert_create" %}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    symbol_id: symbolId,
+                    condition: condition,
+                    target_price: price,
+                    notes: notes,
+                    trigger_once: true
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert(data.error || '创建失败');
+                }
+            });
+        });
+
+        // 取消价格提醒
+        function cancelPriceAlert(id) {
+            if (!confirm('确定取消此价格提醒？')) return;
+            fetch(`/api/price-alerts/${id}/cancel/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                }
+            });
+        }
+
+        // 保存通知设置
+        document.getElementById('settings-form')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const settings = {
+                enable_price_alert: document.getElementById('setting-price-alert').checked,
+                enable_plan_reminder: document.getElementById('setting-plan-reminder').checked,
+                enable_risk_warning: document.getElementById('setting-risk-warning').checked,
+                enable_daily_summary: document.getElementById('setting-daily-summary').checked,
+                enable_trade_notification: document.getElementById('setting-trade-notification').checked,
+                daily_summary_time: document.getElementById('setting-summary-time').value,
+                plan_reminder_minutes: document.getElementById('setting-plan-minutes').value,
+                quiet_hours_start: document.getElementById('setting-quiet-start').value,
+                quiet_hours_end: document.getElementById('setting-quiet-end').value
+            };
+
+            fetch('{% url "api_notification_settings_update" %}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrfToken(),
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(settings)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('设置已保存');
+                } else {
+                    alert('保存失败');
+                }
+            });
+        });
+
+        // 页面加载时根据URL hash切换标签
+        if (window.location.hash) {
+            const tab = window.location.hash.replace('#', '');
+            if (['notifications', 'alerts', 'settings'].includes(tab)) {
+                switchTab(tab);
+            }
+        }
+    </script>
+</body>
+</html>

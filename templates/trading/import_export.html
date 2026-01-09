@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据导入导出 - MyTrader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#10B981',
+                        danger: '#EF4444',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- 顶部导航栏 -->
+    <nav class="bg-white shadow-lg fixed top-0 left-0 right-0 z-30">
+        <div class="px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="{% url 'home' %}" class="text-2xl font-bold text-emerald-600">MyTrader</a>
+                    <span class="ml-4 text-gray-500">/ 数据导入导出</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    {% if user.is_authenticated %}
+                    <span class="text-gray-600">{{ user.username }}</span>
+                    <a href="{% url 'home' %}" class="text-gray-600 hover:text-gray-800">返回首页</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="pt-20 pb-8">
+        <div class="max-w-6xl mx-auto px-4">
+            <!-- 数据统计 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div class="bg-white rounded-xl shadow-md p-4 text-center">
+                    <p class="text-gray-500 text-sm">账户数量</p>
+                    <p class="text-2xl font-bold text-gray-800">{{ accounts.count }}</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4 text-center">
+                    <p class="text-gray-500 text-sm">交易记录</p>
+                    <p class="text-2xl font-bold text-emerald-600">{{ trade_count }}</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4 text-center">
+                    <p class="text-gray-500 text-sm">持仓数量</p>
+                    <p class="text-2xl font-bold text-blue-600">{{ position_count }}</p>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4 text-center">
+                    <p class="text-gray-500 text-sm">策略数量</p>
+                    <p class="text-2xl font-bold text-purple-600">{{ strategies.count }}</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- 数据导出 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                        数据导出
+                    </h2>
+
+                    <!-- 导出交易记录 -->
+                    <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+                        <h3 class="font-semibold text-gray-700 mb-3">导出交易记录</h3>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm text-gray-600 mb-1">账户筛选</label>
+                                <select id="export-trade-account" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                                    <option value="">全部账户</option>
+                                    {% for account in accounts %}
+                                    <option value="{{ account.id }}">{{ account.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">开始日期</label>
+                                    <input type="date" id="export-trade-start" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">结束日期</label>
+                                    <input type="date" id="export-trade-end" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                                </div>
+                            </div>
+                            <button onclick="exportTrades()" class="w-full bg-emerald-500 text-white py-2 rounded-lg hover:bg-emerald-600 transition">
+                                导出交易记录 (CSV)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 其他导出选项 -->
+                    <div class="space-y-3">
+                        <button onclick="exportAccounts()" class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                            <span class="text-gray-700">导出账户数据</span>
+                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                        </button>
+                        <button onclick="exportPositions()" class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                            <span class="text-gray-700">导出持仓数据</span>
+                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                        </button>
+                        <button onclick="exportSymbols()" class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                            <span class="text-gray-700">导出交易标的</span>
+                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                        </button>
+                        <button onclick="exportAnalysis()" class="w-full flex items-center justify-between px-4 py-3 bg-blue-50 rounded-lg hover:bg-blue-100 transition">
+                            <span class="text-blue-700">导出分析报告</span>
+                            <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 数据导入 -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                        </svg>
+                        数据导入
+                    </h2>
+
+                    <!-- 导入交易记录 -->
+                    <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+                        <h3 class="font-semibold text-gray-700 mb-3">导入交易记录</h3>
+                        <form id="import-trade-form" enctype="multipart/form-data">
+                            {% csrf_token %}
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">目标账户 <span class="text-red-500">*</span></label>
+                                    <select name="account" id="import-trade-account" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="">请选择账户</option>
+                                        {% for account in accounts %}
+                                        <option value="{{ account.id }}">{{ account.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">默认策略</label>
+                                    <select name="strategy" id="import-trade-strategy" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="">无</option>
+                                        {% for strategy in strategies %}
+                                        <option value="{{ strategy.id }}">{{ strategy.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">选择CSV文件 <span class="text-red-500">*</span></label>
+                                    <input type="file" name="file" id="import-trade-file" accept=".csv" required
+                                        class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button type="submit" class="flex-1 bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition">
+                                        导入交易记录
+                                    </button>
+                                    <a href="{% url 'download_template' %}?type=trade" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-gray-600">
+                                        下载模板
+                                    </a>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- 导入交易标的 -->
+                    <div class="p-4 bg-gray-50 rounded-lg">
+                        <h3 class="font-semibold text-gray-700 mb-3">导入交易标的</h3>
+                        <form id="import-symbol-form" enctype="multipart/form-data">
+                            {% csrf_token %}
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm text-gray-600 mb-1">选择CSV文件 <span class="text-red-500">*</span></label>
+                                    <input type="file" name="file" id="import-symbol-file" accept=".csv" required
+                                        class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button type="submit" class="flex-1 bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition">
+                                        导入交易标的
+                                    </button>
+                                    <a href="{% url 'download_template' %}?type=symbol" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition text-gray-600">
+                                        下载模板
+                                    </a>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 导入结果弹窗 -->
+            <div id="result-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+                <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4" id="result-title">导入结果</h3>
+                    <div id="result-content" class="mb-4">
+                        <!-- 结果内容 -->
+                    </div>
+                    <button onclick="closeModal()" class="w-full bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600 transition">
+                        关闭
+                    </button>
+                </div>
+            </div>
+
+            <!-- 使用说明 -->
+            <div class="mt-8 bg-white rounded-xl shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">使用说明</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="font-semibold text-gray-700 mb-2">导出功能</h3>
+                        <ul class="list-disc list-inside text-gray-600 text-sm space-y-1">
+                            <li>导出的文件为CSV格式，可用Excel打开</li>
+                            <li>交易记录可按账户和日期范围筛选</li>
+                            <li>分析报告包含完整的统计数据</li>
+                            <li>导出文件使用UTF-8编码</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-gray-700 mb-2">导入功能</h3>
+                        <ul class="list-disc list-inside text-gray-600 text-sm space-y-1">
+                            <li>请先下载模板，按格式填写数据</li>
+                            <li>导入前请确保标的代码已存在</li>
+                            <li>重复的订单ID会自动跳过</li>
+                            <li>支持UTF-8和GBK编码的CSV文件</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-white border-t mt-8">
+        <div class="max-w-6xl mx-auto px-4 py-6 text-center text-gray-500 text-sm">
+            MyTrader 交易管理系统 &copy; 2025
+        </div>
+    </footer>
+
+    <script>
+        // 导出交易记录
+        function exportTrades() {
+            const account = document.getElementById('export-trade-account').value;
+            const startDate = document.getElementById('export-trade-start').value;
+            const endDate = document.getElementById('export-trade-end').value;
+
+            const params = new URLSearchParams();
+            if (account) params.append('account', account);
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+
+            window.location.href = '{% url "export_trades" %}?' + params.toString();
+        }
+
+        // 导出账户
+        function exportAccounts() {
+            window.location.href = '{% url "export_accounts" %}';
+        }
+
+        // 导出持仓
+        function exportPositions() {
+            const account = document.getElementById('export-trade-account').value;
+            const params = new URLSearchParams();
+            if (account) params.append('account', account);
+            window.location.href = '{% url "export_positions" %}?' + params.toString();
+        }
+
+        // 导出标的
+        function exportSymbols() {
+            window.location.href = '{% url "export_symbols" %}';
+        }
+
+        // 导出分析报告
+        function exportAnalysis() {
+            const account = document.getElementById('export-trade-account').value;
+            const startDate = document.getElementById('export-trade-start').value;
+            const endDate = document.getElementById('export-trade-end').value;
+
+            const params = new URLSearchParams();
+            if (account) params.append('account', account);
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+
+            window.location.href = '{% url "export_analysis" %}?' + params.toString();
+        }
+
+        // 导入交易记录表单提交
+        document.getElementById('import-trade-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = '导入中...';
+            submitBtn.disabled = true;
+
+            try {
+                const response = await fetch('{% url "import_trades" %}', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const result = await response.json();
+                showResult(result);
+            } catch (error) {
+                showResult({success: false, error: error.message});
+            } finally {
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+
+        // 导入交易标的表单提交
+        document.getElementById('import-symbol-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = '导入中...';
+            submitBtn.disabled = true;
+
+            try {
+                const response = await fetch('{% url "import_symbols" %}', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const result = await response.json();
+                showResult(result);
+            } catch (error) {
+                showResult({success: false, error: error.message});
+            } finally {
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+
+        // 显示导入结果
+        function showResult(result) {
+            const modal = document.getElementById('result-modal');
+            const content = document.getElementById('result-content');
+
+            if (result.error) {
+                content.innerHTML = `
+                    <div class="p-4 bg-red-50 rounded-lg">
+                        <p class="text-red-600 font-semibold">导入失败</p>
+                        <p class="text-red-500 text-sm mt-1">${result.error}</p>
+                    </div>
+                `;
+            } else {
+                let html = `
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="p-3 bg-emerald-50 rounded-lg text-center">
+                                <p class="text-emerald-600 text-2xl font-bold">${result.success_count}</p>
+                                <p class="text-emerald-600 text-sm">成功导入</p>
+                            </div>
+                            <div class="p-3 bg-yellow-50 rounded-lg text-center">
+                                <p class="text-yellow-600 text-2xl font-bold">${result.skip_count}</p>
+                                <p class="text-yellow-600 text-sm">跳过</p>
+                            </div>
+                            <div class="p-3 bg-red-50 rounded-lg text-center">
+                                <p class="text-red-500 text-2xl font-bold">${result.error_count}</p>
+                                <p class="text-red-500 text-sm">错误</p>
+                            </div>
+                        </div>
+                `;
+
+                if (result.errors && result.errors.length > 0) {
+                    html += `
+                        <div class="p-3 bg-red-50 rounded-lg max-h-40 overflow-y-auto">
+                            <p class="text-red-600 font-semibold text-sm mb-2">错误详情:</p>
+                            <ul class="text-red-500 text-xs space-y-1">
+                                ${result.errors.map(err => `<li>${err}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+
+                html += '</div>';
+                content.innerHTML = html;
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        // 关闭弹窗
+        function closeModal() {
+            document.getElementById('result-modal').classList.add('hidden');
+        }
+
+        // 点击遮罩关闭
+        document.getElementById('result-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>

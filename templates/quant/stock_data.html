@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票数据管理 - MyTrader</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 24px; color: #333; }
+        .header .stats { display: flex; gap: 30px; }
+        .header .stat { text-align: center; }
+        .header .stat-value { font-size: 24px; font-weight: bold; color: #1890ff; }
+        .header .stat-label { font-size: 12px; color: #666; }
+        .card { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 18px; margin-bottom: 15px; color: #333; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .form-row { display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 15px; }
+        .form-group { flex: 1; min-width: 200px; }
+        .form-group label { display: block; margin-bottom: 5px; color: #666; font-size: 14px; }
+        .form-group input, .form-group textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .form-group textarea { resize: vertical; min-height: 80px; }
+        .form-group small { color: #999; font-size: 12px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+        .btn-primary { background: #1890ff; color: #fff; }
+        .btn-primary:hover { background: #40a9ff; }
+        .btn-danger { background: #ff4d4f; color: #fff; }
+        .btn-danger:hover { background: #ff7875; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-sm { padding: 5px 12px; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #fafafa; color: #666; font-weight: 500; }
+        tr:hover { background: #fafafa; }
+        .empty { text-align: center; padding: 40px; color: #999; }
+        .task-list { margin-top: 15px; }
+        .task-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #f9f9f9; border-radius: 4px; margin-bottom: 8px; }
+        .task-item .symbol { font-weight: 500; min-width: 80px; }
+        .task-item .status { flex: 1; }
+        .task-item .status.pending { color: #faad14; }
+        .task-item .status.success { color: #52c41a; }
+        .task-item .status.error { color: #ff4d4f; }
+        .progress-bar { height: 4px; background: #e8e8e8; border-radius: 2px; overflow: hidden; margin-top: 5px; }
+        .progress-bar .progress { height: 100%; background: #1890ff; transition: width 0.3s; }
+        .quick-symbols { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+        .quick-symbols .chip { padding: 4px 12px; background: #e6f7ff; color: #1890ff; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .quick-symbols .chip:hover { background: #bae7ff; }
+        .nav-link { color: #1890ff; text-decoration: none; }
+        .nav-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>股票数据管理</h1>
+                <a href="/" class="nav-link">← 返回首页</a>
+            </div>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value">{{ total_symbols }}</div>
+                    <div class="stat-label">股票数量</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{{ total_records }}</div>
+                    <div class="stat-label">数据条数</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>下载股票数据</h2>
+            <form id="downloadForm">
+                <div class="form-row">
+                    <div class="form-group" style="flex: 2;">
+                        <label>股票代码</label>
+                        <textarea id="symbols" placeholder="输入股票代码，多个用空格、逗号或换行分隔&#10;例如：000001 600519 300750"></textarea>
+                        <small>支持批量输入，每行一个或用空格/逗号分隔</small>
+                        <div class="quick-symbols">
+                            <span class="chip" data-symbols="000001">平安银行</span>
+                            <span class="chip" data-symbols="600519">贵州茅台</span>
+                            <span class="chip" data-symbols="300750">宁德时代</span>
+                            <span class="chip" data-symbols="000858">五粮液</span>
+                            <span class="chip" data-symbols="601318">中国平安</span>
+                            <span class="chip" data-symbols="000001 600519 300750 000858 601318">常用股票</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>开始日期</label>
+                        <input type="date" id="startDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label>结束日期</label>
+                        <input type="date" id="endDate" required>
+                    </div>
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-primary" id="downloadBtn">开始下载</button>
+                    </div>
+                </div>
+            </form>
+            <div id="taskList" class="task-list" style="display: none;">
+                <h3 style="font-size: 14px; color: #666; margin-bottom: 10px;">下载进度</h3>
+                <div id="tasks"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>已有数据</h2>
+            {% if stats %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>股票代码</th>
+                        <th>数据条数</th>
+                        <th>开始日期</th>
+                        <th>结束日期</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in stats %}
+                    <tr data-symbol="{{ item.symbol }}">
+                        <td><strong>{{ item.symbol }}</strong></td>
+                        <td>{{ item.count }} 条</td>
+                        <td>{{ item.start_date }}</td>
+                        <td>{{ item.end_date }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-danger delete-btn" data-symbol="{{ item.symbol }}">删除</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty">暂无数据，请先下载股票数据</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        // 设置默认日期（最近一年）
+        const today = new Date();
+        const oneYearAgo = new Date(today);
+        oneYearAgo.setFullYear(today.getFullYear() - 1);
+
+        document.getElementById('endDate').value = today.toISOString().split('T')[0];
+        document.getElementById('startDate').value = oneYearAgo.toISOString().split('T')[0];
+
+        // 快捷选择股票
+        document.querySelectorAll('.quick-symbols .chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const symbols = chip.dataset.symbols;
+                const textarea = document.getElementById('symbols');
+                if (textarea.value) {
+                    textarea.value += ' ' + symbols;
+                } else {
+                    textarea.value = symbols;
+                }
+            });
+        });
+
+        // 下载表单提交
+        document.getElementById('downloadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const symbolsText = document.getElementById('symbols').value;
+            const symbols = symbolsText.split(/[\s,，\n]+/).filter(s => s.trim());
+
+            if (symbols.length === 0) {
+                alert('请输入股票代码');
+                return;
+            }
+
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            const btn = document.getElementById('downloadBtn');
+            btn.disabled = true;
+            btn.textContent = '提交中...';
+
+            try {
+                const resp = await fetch('{% url "fetch_stock_data_api" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({ symbols, start_date: startDate, end_date: endDate })
+                });
+
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    document.getElementById('taskList').style.display = 'block';
+                    const tasksDiv = document.getElementById('tasks');
+                    tasksDiv.innerHTML = '';
+
+                    result.tasks.forEach(task => {
+                        const div = document.createElement('div');
+                        div.className = 'task-item';
+                        div.id = `task-${task.task_id}`;
+                        div.innerHTML = `
+                            <span class="symbol">${task.symbol}</span>
+                            <span class="status pending">等待中...</span>
+                        `;
+                        tasksDiv.appendChild(div);
+                        pollTaskStatus(task.task_id, task.symbol);
+                    });
+                } else {
+                    alert(result.message);
+                }
+            } catch (err) {
+                alert('请求失败: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '开始下载';
+            }
+        });
+
+        // 轮询任务状态
+        async function pollTaskStatus(taskId, symbol) {
+            const taskDiv = document.getElementById(`task-${taskId}`);
+            const statusSpan = taskDiv.querySelector('.status');
+
+            try {
+                const resp = await fetch(`/quant/data/task/${taskId}/`);
+                const data = await resp.json();
+
+                if (data.status === 'SUCCESS') {
+                    statusSpan.className = 'status success';
+                    if (data.result && data.result.count !== undefined) {
+                        statusSpan.textContent = `完成，${data.result.count} 条数据`;
+                    } else {
+                        statusSpan.textContent = '完成';
+                    }
+                    // 刷新页面显示新数据
+                    setTimeout(() => location.reload(), 1000);
+                } else if (data.status === 'FAILURE') {
+                    statusSpan.className = 'status error';
+                    statusSpan.textContent = '下载失败';
+                } else {
+                    statusSpan.textContent = '下载中...';
+                    setTimeout(() => pollTaskStatus(taskId, symbol), 1500);
+                }
+            } catch (err) {
+                statusSpan.className = 'status error';
+                statusSpan.textContent = '查询失败';
+            }
+        }
+
+        // 删除数据
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const symbol = btn.dataset.symbol;
+                if (!confirm(`确定删除 ${symbol} 的所有数据吗？`)) return;
+
+                btn.disabled = true;
+                btn.textContent = '删除中...';
+
+                try {
+                    const resp = await fetch('{% url "delete_stock_data_api" %}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({ symbol })
+                    });
+
+                    const result = await resp.json();
+
+                    if (result.status === 'success') {
+                        const row = document.querySelector(`tr[data-symbol="${symbol}"]`);
+                        row.remove();
+                    } else {
+                        alert(result.message);
+                        btn.disabled = false;
+                        btn.textContent = '删除';
+                    }
+                } catch (err) {
+                    alert('删除失败');
+                    btn.disabled = false;
+                    btn.textContent = '删除';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -6,6 +6,7 @@
     <title>MyTrader - 交易管理系统</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script>
         tailwind.config = {
             theme: {
@@ -51,6 +52,28 @@
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if user.is_authenticated %}
+                    <!-- 通知铃铛 -->
+                    <div class="relative" id="notification-dropdown">
+                        <button onclick="toggleNotificationDropdown()" class="relative p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                            </svg>
+                            <span id="notification-badge" class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">0</span>
+                        </button>
+                        <!-- 通知下拉框 -->
+                        <div id="notification-panel" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border z-50">
+                            <div class="p-3 border-b flex justify-between items-center">
+                                <h3 class="font-semibold text-gray-800">通知</h3>
+                                <button onclick="markAllRead()" class="text-xs text-emerald-600 hover:text-emerald-700">全部已读</button>
+                            </div>
+                            <div id="notification-list" class="max-h-96 overflow-y-auto">
+                                <div class="p-4 text-center text-gray-400">加载中...</div>
+                            </div>
+                            <div class="p-3 border-t text-center">
+                                <a href="{% url 'notifications' %}" class="text-sm text-emerald-600 hover:text-emerald-700">查看全部通知</a>
+                            </div>
+                        </div>
+                    </div>
                     <span class="text-gray-600">{{ user.username }}</span>
                     <a href="{% url 'admin:logout' %}" class="text-gray-600 hover:text-gray-800">退出</a>
                     {% else %}
@@ -89,6 +112,7 @@
                 </a>
                 <div class="sidebar-submenu bg-gray-50">
                     <a href="{% url 'admin:trading_tradelog_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">交易记录</a>
+                    <a href="{% url 'admin:trading_tradereview_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">交易复盘</a>
                     <a href="{% url 'admin:trading_position_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">持仓管理</a>
                     <a href="{% url 'admin:trading_symbol_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">交易标的</a>
                 </div>
@@ -132,6 +156,26 @@
                 </div>
             </div>
 
+            <!-- 交易计划 -->
+            <div class="sidebar-item">
+                <a href="javascript:void(0)" class="flex items-center justify-between px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="toggleSubmenu(this)">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
+                        </svg>
+                        交易计划
+                    </div>
+                    <svg class="w-4 h-4 text-gray-400 submenu-arrow transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </a>
+                <div class="sidebar-submenu bg-gray-50">
+                    <a href="{% url 'admin:trading_tradeplan_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">交易计划</a>
+                    <a href="{% url 'admin:trading_dailynote_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">每日笔记</a>
+                    <a href="{% url 'admin:trading_watchlistgroup_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">观察列表</a>
+                </div>
+            </div>
+
             <!-- 投资工具 -->
             <div class="sidebar-item">
                 <a href="#tools" class="flex items-center px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="showSection('tools')">
@@ -140,6 +184,26 @@
                     </svg>
                     投资工具
                 </a>
+            </div>
+
+            <!-- 风险管理 -->
+            <div class="sidebar-item">
+                <a href="javascript:void(0)" class="flex items-center justify-between px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="toggleSubmenu(this)">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                        </svg>
+                        风险管理
+                    </div>
+                    <svg class="w-4 h-4 text-gray-400 submenu-arrow transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </a>
+                <div class="sidebar-submenu bg-gray-50">
+                    <a href="{% url 'admin:trading_riskrule_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">风险规则</a>
+                    <a href="{% url 'admin:trading_riskalert_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">风险警告</a>
+                    <a href="{% url 'admin:trading_risksnapshot_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">风险快照</a>
+                </div>
             </div>
 
             <!-- 报表分析 -->
@@ -158,6 +222,69 @@
                 <div class="sidebar-submenu bg-gray-50">
                     <a href="{% url 'admin:trading_dailyreport_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">日报</a>
                     <a href="{% url 'admin:trading_monthlyreport_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">月报</a>
+                    <a href="{% url 'analytics' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">深度分析</a>
+                </div>
+            </div>
+
+            <!-- 数据导入导出 -->
+            <div class="sidebar-item">
+                <a href="{% url 'import_export' %}" class="flex items-center px-6 py-3 text-gray-700 hover:bg-emerald-50 transition">
+                    <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                    </svg>
+                    数据导入导出
+                </a>
+            </div>
+
+            <!-- 自动化任务 -->
+            <div class="sidebar-item">
+                <a href="{% url 'automation' %}" class="flex items-center px-6 py-3 text-gray-700 hover:bg-emerald-50 transition">
+                    <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                    自动化任务
+                </a>
+            </div>
+
+            <!-- 量化交易 -->
+            <div class="sidebar-item">
+                <a href="javascript:void(0)" class="flex items-center justify-between px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="toggleSubmenu(this)">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
+                        </svg>
+                        量化交易
+                    </div>
+                    <svg class="w-4 h-4 text-gray-400 submenu-arrow transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </a>
+                <div class="sidebar-submenu bg-gray-50">
+                    <a href="{% url 'stock_data_page' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">股票数据</a>
+                    <a href="{% url 'admin:quant_strategy_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">量化策略</a>
+                    <a href="{% url 'admin:quant_backtestresult_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">回测结果</a>
+                </div>
+            </div>
+
+            <!-- 通知中心 -->
+            <div class="sidebar-item">
+                <a href="javascript:void(0)" class="flex items-center justify-between px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="toggleSubmenu(this)">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                        </svg>
+                        通知中心
+                        <span id="sidebar-notification-badge" class="hidden ml-2 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 font-medium">0</span>
+                    </div>
+                    <svg class="w-4 h-4 text-gray-400 submenu-arrow transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </a>
+                <div class="sidebar-submenu bg-gray-50">
+                    <a href="{% url 'notifications' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">全部通知</a>
+                    <a href="{% url 'admin:trading_pricealert_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">价格提醒</a>
+                    <a href="{% url 'admin:trading_notificationsetting_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">通知设置</a>
                 </div>
             </div>
 
@@ -529,6 +656,133 @@
 
         // 图表初始化
         {% if user.is_authenticated %}
+        // 通知功能
+        let notificationDropdownOpen = false;
+
+        function toggleNotificationDropdown() {
+            const panel = document.getElementById('notification-panel');
+            notificationDropdownOpen = !notificationDropdownOpen;
+            if (notificationDropdownOpen) {
+                panel.classList.remove('hidden');
+                loadNotifications();
+            } else {
+                panel.classList.add('hidden');
+            }
+        }
+
+        // 点击外部关闭下拉框
+        document.addEventListener('click', function(e) {
+            const dropdown = document.getElementById('notification-dropdown');
+            if (dropdown && !dropdown.contains(e.target)) {
+                document.getElementById('notification-panel').classList.add('hidden');
+                notificationDropdownOpen = false;
+            }
+        });
+
+        function updateNotificationBadge(count) {
+            const badge = document.getElementById('notification-badge');
+            const sidebarBadge = document.getElementById('sidebar-notification-badge');
+            if (count > 0) {
+                badge.textContent = count > 99 ? '99+' : count;
+                badge.classList.remove('hidden');
+                if (sidebarBadge) {
+                    sidebarBadge.textContent = count > 99 ? '99+' : count;
+                    sidebarBadge.classList.remove('hidden');
+                }
+            } else {
+                badge.classList.add('hidden');
+                if (sidebarBadge) sidebarBadge.classList.add('hidden');
+            }
+        }
+
+        function fetchUnreadCount() {
+            fetch('{% url "api_notification_unread_count" %}')
+                .then(response => response.json())
+                .then(data => {
+                    updateNotificationBadge(data.unread_count);
+                })
+                .catch(err => console.log('Failed to fetch notification count'));
+        }
+
+        function loadNotifications() {
+            const listEl = document.getElementById('notification-list');
+            fetch('{% url "api_notifications" %}?limit=10')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.notifications.length === 0) {
+                        listEl.innerHTML = '<div class="p-4 text-center text-gray-400">暂无通知</div>';
+                        return;
+                    }
+                    listEl.innerHTML = data.notifications.map(n => `
+                        <div class="p-3 border-b hover:bg-gray-50 cursor-pointer ${n.is_read ? 'opacity-60' : ''}" onclick="markRead(${n.id})">
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0 w-8 h-8 rounded-full bg-${n.color}-100 flex items-center justify-center mr-3">
+                                    <i class="fas ${n.icon} text-${n.color}-600 text-sm"></i>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm font-medium text-gray-900 truncate">${n.title}</p>
+                                    <p class="text-xs text-gray-500 mt-1 line-clamp-2">${n.message}</p>
+                                    <p class="text-xs text-gray-400 mt-1">${n.created_at}</p>
+                                </div>
+                                ${!n.is_read ? '<span class="w-2 h-2 bg-emerald-500 rounded-full flex-shrink-0"></span>' : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                    updateNotificationBadge(data.unread_count);
+                })
+                .catch(err => {
+                    listEl.innerHTML = '<div class="p-4 text-center text-red-400">加载失败</div>';
+                });
+        }
+
+        function markRead(notificationId) {
+            fetch(`/api/notifications/${notificationId}/read/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrfToken()
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                updateNotificationBadge(data.unread_count);
+                loadNotifications();
+            });
+        }
+
+        function markAllRead() {
+            fetch('{% url "api_notification_mark_all_read" %}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getCsrfToken()
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                updateNotificationBadge(0);
+                loadNotifications();
+            });
+        }
+
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // 初始加载未读数量并定时刷新
+        fetchUnreadCount();
+        setInterval(fetchUnreadCount, 60000); // 每分钟刷新
+
         fetch('{% url "api_dashboard" %}')
             .then(response => response.json())
             .then(data => {

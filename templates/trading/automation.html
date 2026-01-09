@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自动化任务 - MyTrader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#10B981',
+                        danger: '#EF4444',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- 顶部导航栏 -->
+    <nav class="bg-white shadow-lg fixed top-0 left-0 right-0 z-30">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="{% url 'home' %}" class="flex items-center">
+                        <svg class="w-6 h-6 text-gray-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                        </svg>
+                        <span class="text-2xl font-bold text-emerald-600">MyTrader</span>
+                    </a>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-600">{{ user.username }}</span>
+                    <a href="{% url 'admin:logout' %}" class="text-gray-600 hover:text-gray-800">退出</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容 -->
+    <main class="pt-20 pb-8">
+        <div class="max-w-6xl mx-auto px-4">
+            <!-- 页面标题 -->
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-800">自动化任务</h1>
+                    <p class="text-gray-500 mt-1">管理自动化任务和查看执行状态</p>
+                </div>
+                <div class="flex space-x-3">
+                    <button onclick="refreshStatus()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
+                        <i class="fas fa-sync-alt mr-2"></i>刷新状态
+                    </button>
+                </div>
+            </div>
+
+            <!-- 状态概览 -->
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">今日交易</p>
+                            <p class="text-2xl font-bold text-gray-800" id="stat-trades">-</p>
+                        </div>
+                        <div class="bg-blue-100 p-3 rounded-full">
+                            <i class="fas fa-exchange-alt text-blue-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">持仓数量</p>
+                            <p class="text-2xl font-bold text-gray-800" id="stat-positions">-</p>
+                        </div>
+                        <div class="bg-emerald-100 p-3 rounded-full">
+                            <i class="fas fa-layer-group text-emerald-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">今日日报</p>
+                            <p class="text-2xl font-bold text-gray-800" id="stat-daily">-</p>
+                        </div>
+                        <div class="bg-purple-100 p-3 rounded-full">
+                            <i class="fas fa-file-alt text-purple-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">风险快照</p>
+                            <p class="text-2xl font-bold text-gray-800" id="stat-snapshots">-</p>
+                        </div>
+                        <div class="bg-orange-100 p-3 rounded-full">
+                            <i class="fas fa-camera text-orange-600"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl shadow-md p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-500 text-sm">活跃警告</p>
+                            <p class="text-2xl font-bold text-red-500" id="stat-alerts">-</p>
+                        </div>
+                        <div class="bg-red-100 p-3 rounded-full">
+                            <i class="fas fa-exclamation-triangle text-red-600"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 自动化功能说明 -->
+            <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">
+                    <i class="fas fa-cogs mr-2 text-emerald-500"></i>自动化功能
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
+                    <div class="flex items-start">
+                        <span class="w-6 h-6 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
+                            <i class="fas fa-check text-xs"></i>
+                        </span>
+                        <div>
+                            <p class="font-medium text-gray-800">交易自动计算</p>
+                            <p>保存交易时自动计算手续费、同步持仓</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <span class="w-6 h-6 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
+                            <i class="fas fa-check text-xs"></i>
+                        </span>
+                        <div>
+                            <p class="font-medium text-gray-800">持仓自动更新</p>
+                            <p>交易成交后自动更新持仓数量和均价</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <span class="w-6 h-6 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
+                            <i class="fas fa-check text-xs"></i>
+                        </span>
+                        <div>
+                            <p class="font-medium text-gray-800">日报自动生成</p>
+                            <p>每日汇总交易数据生成日报</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <span class="w-6 h-6 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
+                            <i class="fas fa-check text-xs"></i>
+                        </span>
+                        <div>
+                            <p class="font-medium text-gray-800">风险自动监控</p>
+                            <p>实时检查风险规则，触发时发送警告</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 手动任务执行 -->
+            <div class="bg-white rounded-xl shadow-md p-6 mb-8">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">
+                    <i class="fas fa-play-circle mr-2 text-blue-500"></i>手动执行任务
+                </h2>
+
+                <!-- 账户选择 -->
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">选择账户（可选）</label>
+                    <select id="task-account" class="w-full md:w-64 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                        <option value="">所有账户</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.id }}">{{ account.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- 任务按钮 -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <button onclick="runTask('daily_report')" class="task-btn flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-emerald-500 hover:bg-emerald-50 transition group">
+                        <div class="text-center">
+                            <i class="fas fa-file-alt text-2xl text-gray-400 group-hover:text-emerald-500 mb-2"></i>
+                            <p class="font-medium text-gray-700">生成日报</p>
+                            <p class="text-xs text-gray-500">汇总昨天的交易数据</p>
+                        </div>
+                    </button>
+                    <button onclick="runTask('monthly_report')" class="task-btn flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition group">
+                        <div class="text-center">
+                            <i class="fas fa-calendar-alt text-2xl text-gray-400 group-hover:text-purple-500 mb-2"></i>
+                            <p class="font-medium text-gray-700">生成月报</p>
+                            <p class="text-xs text-gray-500">汇总上月的交易数据</p>
+                        </div>
+                    </button>
+                    <button onclick="runTask('risk_snapshot')" class="task-btn flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-orange-500 hover:bg-orange-50 transition group">
+                        <div class="text-center">
+                            <i class="fas fa-camera text-2xl text-gray-400 group-hover:text-orange-500 mb-2"></i>
+                            <p class="font-medium text-gray-700">更新风险快照</p>
+                            <p class="text-xs text-gray-500">记录当前风险状态</p>
+                        </div>
+                    </button>
+                    <button onclick="runTask('risk_check')" class="task-btn flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-red-500 hover:bg-red-50 transition group">
+                        <div class="text-center">
+                            <i class="fas fa-shield-alt text-2xl text-gray-400 group-hover:text-red-500 mb-2"></i>
+                            <p class="font-medium text-gray-700">检查风险规则</p>
+                            <p class="text-xs text-gray-500">触发风险警告</p>
+                        </div>
+                    </button>
+                    <button onclick="runTask('strategy_performance')" class="task-btn flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition group">
+                        <div class="text-center">
+                            <i class="fas fa-chart-line text-2xl text-gray-400 group-hover:text-blue-500 mb-2"></i>
+                            <p class="font-medium text-gray-700">更新策略绩效</p>
+                            <p class="text-xs text-gray-500">计算策略各项指标</p>
+                        </div>
+                    </button>
+                    <button onclick="runTask('expire_plans')" class="task-btn flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-500 hover:bg-gray-100 transition group">
+                        <div class="text-center">
+                            <i class="fas fa-clock text-2xl text-gray-400 group-hover:text-gray-600 mb-2"></i>
+                            <p class="font-medium text-gray-700">过期交易计划</p>
+                            <p class="text-xs text-gray-500">标记过期的计划</p>
+                        </div>
+                    </button>
+                    <button onclick="runTask('expire_alerts')" class="task-btn flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-yellow-500 hover:bg-yellow-50 transition group">
+                        <div class="text-center">
+                            <i class="fas fa-bell-slash text-2xl text-gray-400 group-hover:text-yellow-500 mb-2"></i>
+                            <p class="font-medium text-gray-700">过期价格提醒</p>
+                            <p class="text-xs text-gray-500">清理失效的提醒</p>
+                        </div>
+                    </button>
+                    <button onclick="runTask('sync_positions')" class="task-btn flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-teal-500 hover:bg-teal-50 transition group">
+                        <div class="text-center">
+                            <i class="fas fa-sync text-2xl text-gray-400 group-hover:text-teal-500 mb-2"></i>
+                            <p class="font-medium text-gray-700">查看持仓状态</p>
+                            <p class="text-xs text-gray-500">需选择账户</p>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 执行结果 -->
+            <div id="result-panel" class="hidden bg-white rounded-xl shadow-md p-6 mb-8">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">
+                    <i class="fas fa-clipboard-check mr-2 text-green-500"></i>执行结果
+                </h2>
+                <div id="result-content" class="p-4 bg-gray-50 rounded-lg">
+                    <!-- 结果内容 -->
+                </div>
+            </div>
+
+            <!-- 命令行说明 -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">
+                    <i class="fas fa-terminal mr-2 text-gray-600"></i>命令行工具
+                </h2>
+                <p class="text-gray-600 mb-4">您也可以通过命令行运行自动化任务，适合设置定时任务（cron）：</p>
+                <div class="space-y-3">
+                    <div class="bg-gray-800 text-gray-100 p-4 rounded-lg font-mono text-sm">
+                        <p class="text-gray-400"># 运行每日任务（生成日报、更新风险快照等）</p>
+                        <p>python manage.py run_daily_tasks</p>
+                    </div>
+                    <div class="bg-gray-800 text-gray-100 p-4 rounded-lg font-mono text-sm">
+                        <p class="text-gray-400"># 运行每月任务（生成月报）</p>
+                        <p>python manage.py run_monthly_tasks</p>
+                    </div>
+                    <div class="bg-gray-800 text-gray-100 p-4 rounded-lg font-mono text-sm">
+                        <p class="text-gray-400"># 运行每小时任务（计划提醒、风险检查）</p>
+                        <p>python manage.py run_hourly_tasks</p>
+                    </div>
+                    <div class="bg-gray-800 text-gray-100 p-4 rounded-lg font-mono text-sm">
+                        <p class="text-gray-400"># 重新同步所有持仓（根据交易记录计算）</p>
+                        <p>python manage.py sync_positions --clear</p>
+                    </div>
+                </div>
+
+                <div class="mt-6 p-4 bg-blue-50 rounded-lg">
+                    <h3 class="font-medium text-blue-800 mb-2"><i class="fas fa-info-circle mr-2"></i>定时任务设置示例</h3>
+                    <p class="text-blue-700 text-sm mb-2">在 crontab 中添加以下配置：</p>
+                    <div class="bg-white p-3 rounded font-mono text-xs text-gray-700">
+                        <p># 每天凌晨1点运行每日任务</p>
+                        <p>0 1 * * * cd /path/to/mytrader && .venv/bin/python manage.py run_daily_tasks</p>
+                        <p class="mt-2"># 每月1日凌晨2点运行月度任务</p>
+                        <p>0 2 1 * * cd /path/to/mytrader && .venv/bin/python manage.py run_monthly_tasks</p>
+                        <p class="mt-2"># 每小时运行一次检查</p>
+                        <p>0 * * * * cd /path/to/mytrader && .venv/bin/python manage.py run_hourly_tasks</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // 获取CSRF Token
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // 刷新状态
+        function refreshStatus() {
+            fetch('{% url "api_automation_status" %}')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('stat-trades').textContent = data.trades_today;
+                    document.getElementById('stat-positions').textContent = data.positions;
+                    document.getElementById('stat-daily').textContent = data.daily_reports_today;
+                    document.getElementById('stat-snapshots').textContent = data.recent_snapshots;
+                    document.getElementById('stat-alerts').textContent = data.active_alerts;
+                })
+                .catch(err => console.error('Failed to refresh status:', err));
+        }
+
+        // 执行任务
+        function runTask(taskType) {
+            const accountId = document.getElementById('task-account').value;
+            const resultPanel = document.getElementById('result-panel');
+            const resultContent = document.getElementById('result-content');
+
+            // 禁用按钮
+            document.querySelectorAll('.task-btn').forEach(btn => {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+            });
+
+            resultContent.innerHTML = '<div class="flex items-center text-gray-600"><i class="fas fa-spinner fa-spin mr-2"></i>正在执行任务...</div>';
+            resultPanel.classList.remove('hidden');
+
+            fetch('{% url "api_automation_run" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({
+                    task_type: taskType,
+                    account_id: accountId || null
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    resultContent.innerHTML = `
+                        <div class="flex items-start">
+                            <span class="flex-shrink-0 w-8 h-8 bg-green-100 text-green-600 rounded-full flex items-center justify-center mr-3">
+                                <i class="fas fa-check"></i>
+                            </span>
+                            <div>
+                                <p class="font-medium text-green-800">${data.message}</p>
+                                <p class="text-sm text-gray-600 mt-1">任务类型: ${data.task}</p>
+                                ${data.details ? `<p class="text-sm text-gray-500 mt-1">详情: ${JSON.stringify(data.details)}</p>` : ''}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultContent.innerHTML = `
+                        <div class="flex items-start">
+                            <span class="flex-shrink-0 w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center mr-3">
+                                <i class="fas fa-times"></i>
+                            </span>
+                            <div>
+                                <p class="font-medium text-red-800">执行失败</p>
+                                <p class="text-sm text-red-600 mt-1">${data.error}</p>
+                            </div>
+                        </div>
+                    `;
+                }
+                // 刷新状态
+                refreshStatus();
+            })
+            .catch(err => {
+                resultContent.innerHTML = `
+                    <div class="flex items-start">
+                        <span class="flex-shrink-0 w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center mr-3">
+                            <i class="fas fa-times"></i>
+                        </span>
+                        <div>
+                            <p class="font-medium text-red-800">请求失败</p>
+                            <p class="text-sm text-red-600 mt-1">${err.message}</p>
+                        </div>
+                    </div>
+                `;
+            })
+            .finally(() => {
+                // 重新启用按钮
+                document.querySelectorAll('.task-btn').forEach(btn => {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                });
+            });
+        }
+
+        // 页面加载时刷新状态
+        refreshStatus();
+    </script>
+</body>
+</html>

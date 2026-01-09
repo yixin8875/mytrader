@@ -395,3 +395,847 @@ class PerformanceMetrics(models.Model):
 
     def __str__(self):
         return f"{self.strategy.name} - 绩效指标"
+
+
+class TradeReview(models.Model):
+    """交易复盘模型"""
+    # 情绪选项
+    EMOTION_CHOICES = [
+        ('calm', '冷静'),
+        ('confident', '自信'),
+        ('anxious', '焦虑'),
+        ('fearful', '恐惧'),
+        ('greedy', '贪婪'),
+        ('fomo', 'FOMO'),
+        ('revenge', '报复心态'),
+        ('euphoric', '狂喜'),
+        ('frustrated', '沮丧'),
+        ('neutral', '平静'),
+    ]
+
+    # 复盘标签选项
+    TAG_CHOICES = [
+        ('planned', '计划内'),
+        ('impulsive', '冲动交易'),
+        ('overtrading', '过度交易'),
+        ('early_exit', '过早离场'),
+        ('late_exit', '过晚离场'),
+        ('wrong_direction', '方向错误'),
+        ('position_too_big', '仓位过重'),
+        ('position_too_small', '仓位过轻'),
+        ('missed_stop', '未执行止损'),
+        ('moved_stop', '移动止损'),
+        ('news_driven', '消息驱动'),
+        ('technical', '技术分析'),
+        ('fundamental', '基本面'),
+        ('perfect', '完美执行'),
+        ('lucky', '运气'),
+    ]
+
+    # 评分选项
+    SCORE_CHOICES = [
+        (1, '1分 - 严重失误'),
+        (2, '2分 - 较差'),
+        (3, '3分 - 一般'),
+        (4, '4分 - 良好'),
+        (5, '5分 - 优秀'),
+    ]
+
+    trade_log = models.OneToOneField(TradeLog, on_delete=models.CASCADE, verbose_name='交易记录',
+                                      related_name='review')
+
+    # 情绪记录
+    emotion_before = models.CharField('交易前情绪', max_length=20, choices=EMOTION_CHOICES,
+                                       blank=True, help_text='下单前的情绪状态')
+    emotion_after = models.CharField('交易后情绪', max_length=20, choices=EMOTION_CHOICES,
+                                      blank=True, help_text='平仓后的情绪状态')
+
+    # 复盘标签（支持多选，用逗号分隔存储）
+    tags = models.CharField('复盘标签', max_length=500, blank=True,
+                           help_text='可选多个标签，用逗号分隔')
+
+    # 评分
+    execution_score = models.IntegerField('执行评分', choices=SCORE_CHOICES, null=True, blank=True,
+                                          help_text='对本次交易执行的整体评分')
+
+    # 复盘内容
+    entry_reason = models.TextField('入场理由', blank=True, help_text='为什么在这个位置入场')
+    exit_reason = models.TextField('出场理由', blank=True, help_text='为什么在这个位置出场')
+    what_went_well = models.TextField('做得好的地方', blank=True)
+    what_went_wrong = models.TextField('做得不好的地方', blank=True)
+    lessons_learned = models.TextField('经验教训', blank=True, help_text='这笔交易学到了什么')
+    improvement_plan = models.TextField('改进计划', blank=True, help_text='下次如何改进')
+
+    # 市场分析
+    market_condition = models.CharField('市场环境', max_length=100, blank=True,
+                                        help_text='如：震荡、单边上涨、单边下跌')
+
+    # 是否遵守交易计划
+    followed_plan = models.BooleanField('是否遵守计划', null=True, blank=True,
+                                        help_text='本次交易是否按照交易计划执行')
+
+    # 时间戳
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '交易复盘'
+        verbose_name_plural = '交易复盘'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.trade_log.symbol.code} 复盘 - {self.trade_log.trade_time.strftime('%Y-%m-%d')}"
+
+    def get_tags_list(self):
+        """获取标签列表"""
+        if self.tags:
+            return [t.strip() for t in self.tags.split(',') if t.strip()]
+        return []
+
+    def get_tags_display(self):
+        """获取标签的中文显示"""
+        tag_dict = dict(self.TAG_CHOICES)
+        return [tag_dict.get(t, t) for t in self.get_tags_list()]
+
+    def get_score_color(self):
+        """根据评分返回颜色"""
+        if not self.execution_score:
+            return 'gray'
+        if self.execution_score >= 4:
+            return 'green'
+        elif self.execution_score >= 3:
+            return 'orange'
+        else:
+            return 'red'
+
+
+class RiskRule(models.Model):
+    """风险规则模型"""
+    RULE_TYPE_CHOICES = [
+        ('daily_loss_limit', '每日亏损限额'),
+        ('single_trade_loss', '单笔亏损限额'),
+        ('max_drawdown', '最大回撤'),
+        ('max_position_ratio', '最大仓位比例'),
+        ('consecutive_losses', '连续亏损次数'),
+        ('daily_trade_limit', '每日交易次数'),
+        ('max_leverage', '最大杠杆'),
+    ]
+
+    ACTION_CHOICES = [
+        ('alert', '发送警告'),
+        ('block', '阻止交易'),
+        ('reduce', '强制减仓'),
+    ]
+
+    LEVEL_CHOICES = [
+        ('warning', '警告'),
+        ('danger', '危险'),
+        ('critical', '严重'),
+    ]
+
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, verbose_name='账户',
+                                related_name='risk_rules')
+    name = models.CharField('规则名称', max_length=100)
+    rule_type = models.CharField('规则类型', max_length=30, choices=RULE_TYPE_CHOICES)
+
+    # 阈值设置
+    threshold_value = models.DecimalField('阈值', max_digits=15, decimal_places=2,
+                                          help_text='根据规则类型：金额、比例(%)或次数')
+    threshold_percent = models.DecimalField('阈值比例', max_digits=5, decimal_places=2, null=True, blank=True,
+                                            help_text='相对于账户资金的比例，如 2 表示 2%')
+
+    # 触发后行为
+    action = models.CharField('触发动作', max_length=20, choices=ACTION_CHOICES, default='alert')
+    level = models.CharField('警告级别', max_length=20, choices=LEVEL_CHOICES, default='warning')
+
+    # 状态
+    is_active = models.BooleanField('是否启用', default=True)
+
+    # 描述
+    description = models.TextField('描述', blank=True)
+
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '风险规则'
+        verbose_name_plural = '风险规则'
+        ordering = ['account', 'rule_type']
+        unique_together = [['account', 'rule_type', 'level']]
+
+    def __str__(self):
+        return f"{self.account.name} - {self.get_rule_type_display()} ({self.get_level_display()})"
+
+    def get_threshold_display(self):
+        """获取阈值显示"""
+        if self.rule_type in ['daily_loss_limit', 'single_trade_loss', 'max_drawdown']:
+            if self.threshold_percent:
+                return f"{self.threshold_percent}%"
+            return f"¥{self.threshold_value:,.2f}"
+        elif self.rule_type in ['max_position_ratio', 'max_leverage']:
+            return f"{self.threshold_value}%"
+        else:
+            return f"{int(self.threshold_value)}次"
+
+
+class RiskAlert(models.Model):
+    """风险警告记录模型"""
+    STATUS_CHOICES = [
+        ('active', '活跃'),
+        ('acknowledged', '已确认'),
+        ('resolved', '已解决'),
+        ('ignored', '已忽略'),
+    ]
+
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, verbose_name='账户',
+                                related_name='risk_alerts')
+    rule = models.ForeignKey(RiskRule, on_delete=models.SET_NULL, null=True, blank=True,
+                            verbose_name='触发规则', related_name='alerts')
+    trade_log = models.ForeignKey(TradeLog, on_delete=models.SET_NULL, null=True, blank=True,
+                                  verbose_name='关联交易', related_name='risk_alerts')
+
+    # 警告信息
+    alert_type = models.CharField('警告类型', max_length=30, choices=RiskRule.RULE_TYPE_CHOICES)
+    level = models.CharField('警告级别', max_length=20, choices=RiskRule.LEVEL_CHOICES)
+    title = models.CharField('警告标题', max_length=200)
+    message = models.TextField('警告详情')
+
+    # 触发时的数值
+    current_value = models.DecimalField('当前值', max_digits=15, decimal_places=2)
+    threshold_value = models.DecimalField('阈值', max_digits=15, decimal_places=2)
+
+    # 状态
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='active')
+    acknowledged_at = models.DateTimeField('确认时间', null=True, blank=True)
+    resolved_at = models.DateTimeField('解决时间', null=True, blank=True)
+
+    # 时间戳
+    triggered_at = models.DateTimeField('触发时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '风险警告'
+        verbose_name_plural = '风险警告'
+        ordering = ['-triggered_at']
+        indexes = [
+            models.Index(fields=['account', '-triggered_at']),
+            models.Index(fields=['status', '-triggered_at']),
+        ]
+
+    def __str__(self):
+        return f"[{self.get_level_display()}] {self.title}"
+
+    def get_level_color(self):
+        """获取级别颜色"""
+        colors = {
+            'warning': 'orange',
+            'danger': 'red',
+            'critical': 'darkred',
+        }
+        return colors.get(self.level, 'gray')
+
+    def get_status_color(self):
+        """获取状态颜色"""
+        colors = {
+            'active': 'red',
+            'acknowledged': 'orange',
+            'resolved': 'green',
+            'ignored': 'gray',
+        }
+        return colors.get(self.status, 'gray')
+
+
+class RiskSnapshot(models.Model):
+    """风险快照模型 - 记录每日风险状态"""
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, verbose_name='账户',
+                                related_name='risk_snapshots')
+    snapshot_date = models.DateField('快照日期', db_index=True)
+
+    # 当日数据
+    daily_pnl = models.DecimalField('当日盈亏', max_digits=15, decimal_places=2, default=0)
+    daily_pnl_percent = models.DecimalField('当日盈亏比例', max_digits=10, decimal_places=2, default=0)
+    daily_trade_count = models.IntegerField('当日交易次数', default=0)
+    daily_win_count = models.IntegerField('当日盈利次数', default=0)
+    daily_loss_count = models.IntegerField('当日亏损次数', default=0)
+
+    # 连续统计
+    consecutive_wins = models.IntegerField('连续盈利次数', default=0)
+    consecutive_losses = models.IntegerField('连续亏损次数', default=0)
+
+    # 回撤数据
+    peak_balance = models.DecimalField('历史最高余额', max_digits=15, decimal_places=2, default=0)
+    current_drawdown = models.DecimalField('当前回撤', max_digits=15, decimal_places=2, default=0)
+    current_drawdown_percent = models.DecimalField('当前回撤比例', max_digits=10, decimal_places=2, default=0)
+    max_drawdown = models.DecimalField('最大回撤', max_digits=15, decimal_places=2, default=0)
+    max_drawdown_percent = models.DecimalField('最大回撤比例', max_digits=10, decimal_places=2, default=0)
+
+    # 仓位数据
+    total_position_value = models.DecimalField('持仓总值', max_digits=15, decimal_places=2, default=0)
+    position_ratio = models.DecimalField('仓位比例', max_digits=10, decimal_places=2, default=0)
+
+    # 风险评分
+    risk_score = models.IntegerField('风险评分', default=0, help_text='0-100，越高风险越大')
+
+    # 警告统计
+    active_alerts_count = models.IntegerField('活跃警告数', default=0)
+
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '风险快照'
+        verbose_name_plural = '风险快照'
+        unique_together = [['account', 'snapshot_date']]
+        ordering = ['-snapshot_date']
+
+    def __str__(self):
+        return f"{self.account.name} - {self.snapshot_date} 风险快照"
+
+    def get_risk_level(self):
+        """获取风险等级"""
+        if self.risk_score >= 80:
+            return 'critical', '严重'
+        elif self.risk_score >= 60:
+            return 'danger', '危险'
+        elif self.risk_score >= 40:
+            return 'warning', '警告'
+        else:
+            return 'safe', '安全'
+
+    def calculate_risk_score(self):
+        """计算风险评分"""
+        score = 0
+
+        # 回撤评分 (最高40分)
+        if self.current_drawdown_percent >= 20:
+            score += 40
+        elif self.current_drawdown_percent >= 10:
+            score += 30
+        elif self.current_drawdown_percent >= 5:
+            score += 20
+        elif self.current_drawdown_percent >= 2:
+            score += 10
+
+        # 连续亏损评分 (最高30分)
+        if self.consecutive_losses >= 5:
+            score += 30
+        elif self.consecutive_losses >= 3:
+            score += 20
+        elif self.consecutive_losses >= 2:
+            score += 10
+
+        # 当日亏损评分 (最高20分)
+        if self.daily_pnl_percent <= -5:
+            score += 20
+        elif self.daily_pnl_percent <= -3:
+            score += 15
+        elif self.daily_pnl_percent <= -1:
+            score += 10
+
+        # 仓位评分 (最高10分)
+        if self.position_ratio >= 90:
+            score += 10
+        elif self.position_ratio >= 70:
+            score += 5
+
+        self.risk_score = min(score, 100)
+        return self.risk_score
+
+
+class WatchlistGroup(models.Model):
+    """观察列表分组模型"""
+    name = models.CharField('分组名称', max_length=50)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='所有者',
+                              related_name='watchlist_groups')
+    description = models.TextField('描述', blank=True)
+    color = models.CharField('颜色标记', max_length=20, default='#3B82F6',
+                            help_text='十六进制颜色代码，如 #3B82F6')
+    sort_order = models.IntegerField('排序', default=0)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '观察分组'
+        verbose_name_plural = '观察分组'
+        ordering = ['sort_order', 'name']
+        unique_together = [['owner', 'name']]
+
+    def __str__(self):
+        return self.name
+
+    def items_count(self):
+        return self.items.count()
+
+
+class WatchlistItem(models.Model):
+    """观察列表项目模型"""
+    PRIORITY_CHOICES = [
+        (1, '低'),
+        (2, '中'),
+        (3, '高'),
+        (4, '紧急'),
+    ]
+
+    group = models.ForeignKey(WatchlistGroup, on_delete=models.CASCADE, verbose_name='分组',
+                              related_name='items')
+    symbol = models.ForeignKey(Symbol, on_delete=models.CASCADE, verbose_name='标的',
+                               related_name='watchlist_items')
+
+    # 价格监控
+    target_price = models.DecimalField('目标价格', max_digits=15, decimal_places=4, null=True, blank=True)
+    alert_price_above = models.DecimalField('价格上破提醒', max_digits=15, decimal_places=4, null=True, blank=True)
+    alert_price_below = models.DecimalField('价格下破提醒', max_digits=15, decimal_places=4, null=True, blank=True)
+
+    # 备注
+    priority = models.IntegerField('优先级', choices=PRIORITY_CHOICES, default=2)
+    notes = models.TextField('备注', blank=True)
+    tags = models.CharField('标签', max_length=200, blank=True, help_text='用逗号分隔多个标签')
+
+    # 状态
+    is_active = models.BooleanField('是否活跃', default=True)
+
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '观察项目'
+        verbose_name_plural = '观察项目'
+        ordering = ['-priority', '-updated_at']
+        unique_together = [['group', 'symbol']]
+
+    def __str__(self):
+        return f"{self.group.name} - {self.symbol.code}"
+
+    def get_tags_list(self):
+        if self.tags:
+            return [t.strip() for t in self.tags.split(',') if t.strip()]
+        return []
+
+
+class TradePlan(models.Model):
+    """交易计划模型"""
+    PLAN_TYPE_CHOICES = [
+        ('daily', '日计划'),
+        ('weekly', '周计划'),
+        ('swing', '波段计划'),
+        ('position', '持仓计划'),
+    ]
+
+    DIRECTION_CHOICES = [
+        ('long', '做多'),
+        ('short', '做空'),
+        ('both', '双向'),
+    ]
+
+    STATUS_CHOICES = [
+        ('draft', '草稿'),
+        ('pending', '待执行'),
+        ('partial', '部分执行'),
+        ('executed', '已执行'),
+        ('cancelled', '已取消'),
+        ('expired', '已过期'),
+    ]
+
+    # 基本信息
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, verbose_name='账户',
+                                related_name='trade_plans')
+    symbol = models.ForeignKey(Symbol, on_delete=models.CASCADE, verbose_name='标的',
+                               related_name='trade_plans')
+    strategy = models.ForeignKey(Strategy, on_delete=models.SET_NULL, null=True, blank=True,
+                                verbose_name='策略', related_name='trade_plans')
+
+    # 计划类型
+    plan_type = models.CharField('计划类型', max_length=20, choices=PLAN_TYPE_CHOICES, default='daily')
+    direction = models.CharField('方向', max_length=10, choices=DIRECTION_CHOICES, default='long')
+
+    # 计划时间
+    plan_date = models.DateField('计划日期', db_index=True)
+    valid_until = models.DateField('有效期至', null=True, blank=True,
+                                   help_text='留空表示仅当日有效')
+
+    # 入场计划
+    entry_price_min = models.DecimalField('入场价下限', max_digits=15, decimal_places=4)
+    entry_price_max = models.DecimalField('入场价上限', max_digits=15, decimal_places=4)
+    entry_condition = models.TextField('入场条件', blank=True,
+                                       help_text='描述满足什么条件时入场')
+
+    # 出场计划
+    stop_loss = models.DecimalField('止损价', max_digits=15, decimal_places=4)
+    take_profit_1 = models.DecimalField('止盈1', max_digits=15, decimal_places=4, null=True, blank=True)
+    take_profit_2 = models.DecimalField('止盈2', max_digits=15, decimal_places=4, null=True, blank=True)
+    take_profit_3 = models.DecimalField('止盈3', max_digits=15, decimal_places=4, null=True, blank=True)
+    exit_condition = models.TextField('出场条件', blank=True,
+                                      help_text='描述满足什么条件时出场')
+
+    # 仓位管理
+    planned_quantity = models.DecimalField('计划数量', max_digits=15, decimal_places=4)
+    max_risk_amount = models.DecimalField('最大风险金额', max_digits=15, decimal_places=2,
+                                          help_text='本计划允许的最大亏损')
+    position_size_percent = models.DecimalField('仓位比例', max_digits=5, decimal_places=2, null=True, blank=True,
+                                                help_text='占账户资金的百分比')
+
+    # 分析理由
+    analysis = models.TextField('分析理由', blank=True, help_text='技术面/基本面分析')
+    key_levels = models.CharField('关键价位', max_length=200, blank=True,
+                                  help_text='支撑位/阻力位，用逗号分隔')
+
+    # 状态
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='draft')
+
+    # 执行记录
+    executed_trade = models.ForeignKey(TradeLog, on_delete=models.SET_NULL, null=True, blank=True,
+                                       verbose_name='执行交易', related_name='from_plan')
+    executed_at = models.DateTimeField('执行时间', null=True, blank=True)
+    execution_notes = models.TextField('执行备注', blank=True)
+
+    # 时间戳
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '交易计划'
+        verbose_name_plural = '交易计划'
+        ordering = ['-plan_date', '-created_at']
+        indexes = [
+            models.Index(fields=['account', '-plan_date']),
+            models.Index(fields=['status', '-plan_date']),
+        ]
+
+    def __str__(self):
+        return f"{self.plan_date} {self.symbol.code} {self.get_direction_display()}"
+
+    @property
+    def risk_reward_ratio(self):
+        """计算盈亏比"""
+        entry_mid = (self.entry_price_min + self.entry_price_max) / 2
+        risk = abs(entry_mid - self.stop_loss)
+        if risk == 0:
+            return None
+        if self.take_profit_1:
+            reward = abs(self.take_profit_1 - entry_mid)
+            return round(reward / risk, 2)
+        return None
+
+    @property
+    def is_valid(self):
+        """检查计划是否仍然有效"""
+        from django.utils import timezone
+        today = timezone.now().date()
+        if self.status in ['executed', 'cancelled', 'expired']:
+            return False
+        if self.valid_until:
+            return today <= self.valid_until
+        return today == self.plan_date
+
+    def get_key_levels_list(self):
+        """获取关键价位列表"""
+        if self.key_levels:
+            return [l.strip() for l in self.key_levels.split(',') if l.strip()]
+        return []
+
+    def calculate_position_size(self):
+        """根据风险金额计算仓位"""
+        entry_mid = (self.entry_price_min + self.entry_price_max) / 2
+        risk_per_unit = abs(entry_mid - self.stop_loss)
+        if risk_per_unit > 0 and self.max_risk_amount:
+            # 考虑合约乘数
+            if self.symbol.symbol_type in ['futures', 'index']:
+                risk_per_unit *= self.symbol.contract_size
+            return self.max_risk_amount / risk_per_unit
+        return 0
+
+    def mark_executed(self, trade_log):
+        """标记为已执行"""
+        from django.utils import timezone
+        self.status = 'executed'
+        self.executed_trade = trade_log
+        self.executed_at = timezone.now()
+        self.save()
+
+
+class DailyNote(models.Model):
+    """每日交易笔记模型"""
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='用户',
+                              related_name='daily_notes')
+    note_date = models.DateField('日期', db_index=True)
+
+    # 盘前计划
+    pre_market_plan = models.TextField('盘前计划', blank=True,
+                                       help_text='今日交易计划、关注标的、重要事件')
+    market_outlook = models.CharField('市场展望', max_length=20, blank=True,
+                                      choices=[('bullish', '看多'), ('bearish', '看空'),
+                                              ('neutral', '中性'), ('uncertain', '不确定')])
+    focus_sectors = models.CharField('关注板块', max_length=200, blank=True)
+    key_events = models.TextField('重要事件', blank=True, help_text='财报、经济数据、政策等')
+
+    # 盘后总结
+    post_market_summary = models.TextField('盘后总结', blank=True)
+    lessons_learned = models.TextField('经验教训', blank=True)
+    mood = models.CharField('今日心情', max_length=20, blank=True,
+                           choices=[('great', '很好'), ('good', '不错'),
+                                   ('normal', '一般'), ('bad', '不好'), ('terrible', '很差')])
+
+    # 统计（可选，也可从其他表聚合）
+    planned_trades = models.IntegerField('计划交易数', default=0)
+    executed_trades = models.IntegerField('执行交易数', default=0)
+    followed_plan_count = models.IntegerField('遵守计划数', default=0)
+
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '每日笔记'
+        verbose_name_plural = '每日笔记'
+        unique_together = [['owner', 'note_date']]
+        ordering = ['-note_date']
+
+    def __str__(self):
+        return f"{self.note_date} 交易笔记"
+
+    @property
+    def plan_execution_rate(self):
+        """计划执行率"""
+        if self.planned_trades > 0:
+            return round(self.executed_trades / self.planned_trades * 100, 1)
+        return 0
+
+
+class Notification(models.Model):
+    """通知消息模型"""
+    NOTIFICATION_TYPE_CHOICES = [
+        ('price_alert', '价格提醒'),
+        ('plan_reminder', '计划提醒'),
+        ('risk_warning', '风险警告'),
+        ('daily_summary', '每日总结'),
+        ('trade_executed', '交易执行'),
+        ('system', '系统通知'),
+    ]
+
+    PRIORITY_CHOICES = [
+        ('low', '低'),
+        ('normal', '普通'),
+        ('high', '高'),
+        ('urgent', '紧急'),
+    ]
+
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='用户',
+                              related_name='notifications')
+    notification_type = models.CharField('通知类型', max_length=20, choices=NOTIFICATION_TYPE_CHOICES)
+    priority = models.CharField('优先级', max_length=20, choices=PRIORITY_CHOICES, default='normal')
+
+    title = models.CharField('标题', max_length=200)
+    message = models.TextField('内容')
+
+    # 关联对象（可选）
+    related_symbol = models.ForeignKey('Symbol', on_delete=models.SET_NULL, null=True, blank=True,
+                                       verbose_name='相关标的', related_name='notifications')
+    related_trade = models.ForeignKey('TradeLog', on_delete=models.SET_NULL, null=True, blank=True,
+                                      verbose_name='相关交易', related_name='notifications')
+    related_plan = models.ForeignKey('TradePlan', on_delete=models.SET_NULL, null=True, blank=True,
+                                     verbose_name='相关计划', related_name='notifications')
+    related_alert = models.ForeignKey('RiskAlert', on_delete=models.SET_NULL, null=True, blank=True,
+                                      verbose_name='相关警告', related_name='notifications')
+
+    # 额外数据（JSON格式存储）
+    extra_data = models.JSONField('额外数据', default=dict, blank=True)
+
+    # 状态
+    is_read = models.BooleanField('是否已读', default=False)
+    read_at = models.DateTimeField('阅读时间', null=True, blank=True)
+
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '通知消息'
+        verbose_name_plural = '通知消息'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['owner', '-created_at']),
+            models.Index(fields=['owner', 'is_read', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"[{self.get_notification_type_display()}] {self.title}"
+
+    def mark_as_read(self):
+        """标记为已读"""
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save(update_fields=['is_read', 'read_at'])
+
+    def get_icon(self):
+        """获取通知图标类"""
+        icons = {
+            'price_alert': 'fa-bell',
+            'plan_reminder': 'fa-clipboard-list',
+            'risk_warning': 'fa-exclamation-triangle',
+            'daily_summary': 'fa-calendar-check',
+            'trade_executed': 'fa-exchange-alt',
+            'system': 'fa-info-circle',
+        }
+        return icons.get(self.notification_type, 'fa-bell')
+
+    def get_color(self):
+        """获取通知颜色"""
+        colors = {
+            'price_alert': 'blue',
+            'plan_reminder': 'purple',
+            'risk_warning': 'red',
+            'daily_summary': 'green',
+            'trade_executed': 'emerald',
+            'system': 'gray',
+        }
+        return colors.get(self.notification_type, 'gray')
+
+
+class PriceAlert(models.Model):
+    """价格提醒模型"""
+    CONDITION_CHOICES = [
+        ('above', '高于'),
+        ('below', '低于'),
+        ('cross_up', '向上穿越'),
+        ('cross_down', '向下穿越'),
+    ]
+
+    STATUS_CHOICES = [
+        ('active', '监控中'),
+        ('triggered', '已触发'),
+        ('cancelled', '已取消'),
+        ('expired', '已过期'),
+    ]
+
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='用户',
+                              related_name='price_alerts')
+    symbol = models.ForeignKey('Symbol', on_delete=models.CASCADE, verbose_name='标的',
+                               related_name='price_alerts')
+
+    condition = models.CharField('条件', max_length=20, choices=CONDITION_CHOICES)
+    target_price = models.DecimalField('目标价格', max_digits=15, decimal_places=4)
+
+    # 可选：设置有效期
+    valid_until = models.DateTimeField('有效期至', null=True, blank=True)
+
+    # 触发设置
+    trigger_once = models.BooleanField('仅触发一次', default=True,
+                                       help_text='触发后自动取消，否则会重复提醒')
+
+    notes = models.CharField('备注', max_length=200, blank=True)
+
+    # 状态
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='active')
+    last_price = models.DecimalField('最后检查价格', max_digits=15, decimal_places=4,
+                                     null=True, blank=True)
+    triggered_at = models.DateTimeField('触发时间', null=True, blank=True)
+    trigger_count = models.IntegerField('触发次数', default=0)
+
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '价格提醒'
+        verbose_name_plural = '价格提醒'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.symbol.code} {self.get_condition_display()} {self.target_price}"
+
+    def check_condition(self, current_price):
+        """检查是否满足触发条件"""
+        if self.status != 'active':
+            return False
+
+        # 检查有效期
+        if self.valid_until and timezone.now() > self.valid_until:
+            self.status = 'expired'
+            self.save(update_fields=['status'])
+            return False
+
+        triggered = False
+
+        if self.condition == 'above':
+            triggered = current_price >= self.target_price
+        elif self.condition == 'below':
+            triggered = current_price <= self.target_price
+        elif self.condition == 'cross_up':
+            # 向上穿越：之前低于目标价，现在高于
+            if self.last_price and self.last_price < self.target_price <= current_price:
+                triggered = True
+        elif self.condition == 'cross_down':
+            # 向下穿越：之前高于目标价，现在低于
+            if self.last_price and self.last_price > self.target_price >= current_price:
+                triggered = True
+
+        # 更新最后价格
+        self.last_price = current_price
+        self.save(update_fields=['last_price'])
+
+        return triggered
+
+    def trigger(self):
+        """触发提醒"""
+        self.triggered_at = timezone.now()
+        self.trigger_count += 1
+
+        if self.trigger_once:
+            self.status = 'triggered'
+
+        self.save(update_fields=['triggered_at', 'trigger_count', 'status'])
+
+        # 创建通知
+        Notification.objects.create(
+            owner=self.owner,
+            notification_type='price_alert',
+            priority='high',
+            title=f'价格提醒: {self.symbol.code}',
+            message=f'{self.symbol.name} 当前价格 {self.last_price} {self.get_condition_display()} {self.target_price}',
+            related_symbol=self.symbol,
+            extra_data={
+                'target_price': str(self.target_price),
+                'current_price': str(self.last_price),
+                'condition': self.condition,
+            }
+        )
+
+
+class NotificationSetting(models.Model):
+    """通知设置模型"""
+    owner = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name='用户',
+                                  related_name='notification_setting')
+
+    # 通知开关
+    enable_price_alert = models.BooleanField('价格提醒', default=True)
+    enable_plan_reminder = models.BooleanField('计划提醒', default=True)
+    enable_risk_warning = models.BooleanField('风险警告', default=True)
+    enable_daily_summary = models.BooleanField('每日总结', default=True)
+    enable_trade_notification = models.BooleanField('交易通知', default=True)
+
+    # 提醒时间
+    daily_summary_time = models.TimeField('每日总结提醒时间', default='20:00')
+    plan_reminder_minutes = models.IntegerField('计划提前提醒(分钟)', default=30)
+
+    # 静默时段
+    quiet_hours_start = models.TimeField('静默开始时间', null=True, blank=True)
+    quiet_hours_end = models.TimeField('静默结束时间', null=True, blank=True)
+
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '通知设置'
+        verbose_name_plural = '通知设置'
+
+    def __str__(self):
+        return f"{self.owner.username} 的通知设置"
+
+    def is_quiet_hours(self):
+        """检查当前是否在静默时段"""
+        if not self.quiet_hours_start or not self.quiet_hours_end:
+            return False
+
+        now = timezone.now().time()
+
+        if self.quiet_hours_start <= self.quiet_hours_end:
+            # 同一天内的静默时段
+            return self.quiet_hours_start <= now <= self.quiet_hours_end
+        else:
+            # 跨天的静默时段（如 22:00 - 08:00）
+            return now >= self.quiet_hours_start or now <= self.quiet_hours_end
