@@ -20,6 +20,7 @@ from trading import views
 from quant import views as quant_views
 
 urlpatterns = [
+    path('health/', views.health_check, name='health_check'),
     path('', views.home, name='home'),
     path('api/dashboard/', views.api_dashboard_data, name='api_dashboard'),
     path('analytics/', views.analytics_page, name='analytics'),

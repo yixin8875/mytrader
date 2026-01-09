@@ -28,7 +28,7 @@ class Account(models.Model):
     initial_balance = models.DecimalField('初始资金', max_digits=15, decimal_places=2, default=0)
     current_balance = models.DecimalField('当前余额', max_digits=15, decimal_places=2, default=0)
     available_balance = models.DecimalField('可用余额', max_digits=15, decimal_places=2, default=0)
-    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='active')
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='active', db_index=True)
     owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='所有者', related_name='trading_accounts')
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
     updated_at = models.DateTimeField('更新时间', auto_now=True)
@@ -203,7 +203,7 @@ class Strategy(models.Model):
 
     name = models.CharField('策略名称', max_length=100, unique=True)
     description = models.TextField('策略描述', blank=True)
-    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='draft')
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='draft', db_index=True)
     owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='创建者', related_name='strategies')
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
     updated_at = models.DateTimeField('更新时间', auto_now=True)
@@ -258,7 +258,7 @@ class TradeLog(models.Model):
     price = models.DecimalField('价格', max_digits=15, decimal_places=4)
     executed_price = models.DecimalField('成交价', max_digits=15, decimal_places=4,
                                         null=True, blank=True)
-    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     order_id = models.CharField('订单ID', max_length=100, unique=True)
     commission = models.DecimalField('手续费', max_digits=10, decimal_places=2, default=0)
     slippage = models.DecimalField('滑点', max_digits=10, decimal_places=4, default=0)

@@ -4,12 +4,15 @@ from django.db.models import Sum, Count, Avg
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
-from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
 from datetime import timedelta, datetime
 import json
+import logging
 from .models import Account, TradeLog, DailyReport, Position, Strategy, Notification, PriceAlert, Symbol
 from .analytics import TradeAnalytics
 from .notifications import NotificationService
+
+logger = logging.getLogger(__name__)
 
 
 def home(request):
@@ -587,12 +590,10 @@ def api_price_alerts(request):
     return JsonResponse({'alerts': data})
 
 
+@login_required
 @require_http_methods(["POST"])
-@csrf_exempt
 def api_price_alert_create(request):
     """创建价格提醒"""
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': '未登录'}, status=401)
 
     try:
         data = json.loads(request.body)
@@ -644,12 +645,10 @@ def api_price_alert_cancel(request, alert_id):
     })
 
 
+@login_required
 @require_http_methods(["POST"])
-@csrf_exempt
 def api_notification_settings_update(request):
     """更新通知设置"""
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': '未登录'}, status=401)
 
     try:
         data = json.loads(request.body)
@@ -836,11 +835,10 @@ def api_run_automation_task(request):
         return JsonResponse(result)
 
     except Exception as e:
-        import traceback
+        logger.exception('自动化任务执行失败')
         return JsonResponse({
             'success': False,
-            'error': str(e),
-            'traceback': traceback.format_exc()
+            'error': '服务器内部错误'
         }, status=500)
 
 
@@ -887,3 +885,8 @@ def api_automation_status(request):
         'positions': positions,
         'trades_today': trades_today,
     })
+
+
+def health_check(request):
+    """健康检查端点"""
+    return JsonResponse({'status': 'ok'})

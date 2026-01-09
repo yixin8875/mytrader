@@ -7,7 +7,8 @@
       "Bash(uv pip install:*)",
       "Bash(uv pip:*)",
       "Bash(.venv/bin/python:*)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/admin/)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/admin/)",
+      "Bash(.venv/bin/pip freeze:*)"
     ]
   }
 }
