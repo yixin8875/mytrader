@@ -16,7 +16,10 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from trading import views
 
 urlpatterns = [
+    path('', views.home, name='home'),
+    path('api/dashboard/', views.api_dashboard_data, name='api_dashboard'),
     path('admin/', admin.site.urls),
 ]

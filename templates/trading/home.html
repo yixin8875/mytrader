@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyTrader - 交易管理系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#10B981',
+                        danger: '#EF4444',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .sidebar-submenu {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .sidebar-submenu.open {
+            max-height: 500px;
+        }
+        .sidebar-item.active > a {
+            background-color: rgb(16 185 129 / 0.1);
+            color: #10B981;
+        }
+        .sidebar-item.active > a svg {
+            color: #10B981;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- 顶部导航栏 -->
+    <nav class="bg-white shadow-lg fixed top-0 left-0 right-0 z-30">
+        <div class="px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <button id="sidebar-toggle" class="p-2 rounded-lg hover:bg-gray-100 mr-3">
+                        <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                        </svg>
+                    </button>
+                    <span class="text-2xl font-bold text-emerald-600">MyTrader</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    {% if user.is_authenticated %}
+                    <span class="text-gray-600">{{ user.username }}</span>
+                    <a href="{% url 'admin:logout' %}" class="text-gray-600 hover:text-gray-800">退出</a>
+                    {% else %}
+                    <a href="{% url 'admin:login' %}" class="bg-emerald-500 text-white px-4 py-2 rounded-lg hover:bg-emerald-600 transition">登录</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 左侧抽屉栏 -->
+    <aside id="sidebar" class="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-white shadow-lg z-20 transform transition-transform duration-300 overflow-y-auto">
+        <nav class="py-4">
+            <!-- 仪表盘 -->
+            <div class="sidebar-item active">
+                <a href="#dashboard" class="flex items-center px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="showSection('dashboard')">
+                    <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                    </svg>
+                    仪表盘
+                </a>
+            </div>
+
+            <!-- 交易管理 -->
+            <div class="sidebar-item">
+                <a href="javascript:void(0)" class="flex items-center justify-between px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="toggleSubmenu(this)">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                        交易管理
+                    </div>
+                    <svg class="w-4 h-4 text-gray-400 submenu-arrow transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </a>
+                <div class="sidebar-submenu bg-gray-50">
+                    <a href="{% url 'admin:trading_tradelog_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">交易记录</a>
+                    <a href="{% url 'admin:trading_position_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">持仓管理</a>
+                    <a href="{% url 'admin:trading_symbol_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">交易标的</a>
+                </div>
+            </div>
+
+            <!-- 账户管理 -->
+            <div class="sidebar-item">
+                <a href="javascript:void(0)" class="flex items-center justify-between px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="toggleSubmenu(this)">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
+                        </svg>
+                        账户管理
+                    </div>
+                    <svg class="w-4 h-4 text-gray-400 submenu-arrow transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </a>
+                <div class="sidebar-submenu bg-gray-50">
+                    <a href="{% url 'admin:trading_account_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">账户列表</a>
+                    <a href="#" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">账户分析</a>
+                </div>
+            </div>
+
+            <!-- 策略管理 -->
+            <div class="sidebar-item">
+                <a href="javascript:void(0)" class="flex items-center justify-between px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="toggleSubmenu(this)">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                        </svg>
+                        策略管理
+                    </div>
+                    <svg class="w-4 h-4 text-gray-400 submenu-arrow transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </a>
+                <div class="sidebar-submenu bg-gray-50">
+                    <a href="{% url 'admin:trading_strategy_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">策略列表</a>
+                    <a href="{% url 'admin:trading_performancemetrics_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">策略绩效</a>
+                </div>
+            </div>
+
+            <!-- 投资工具 -->
+            <div class="sidebar-item">
+                <a href="#tools" class="flex items-center px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="showSection('tools')">
+                    <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                    </svg>
+                    投资工具
+                </a>
+            </div>
+
+            <!-- 报表分析 -->
+            <div class="sidebar-item">
+                <a href="javascript:void(0)" class="flex items-center justify-between px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="toggleSubmenu(this)">
+                    <div class="flex items-center">
+                        <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        报表分析
+                    </div>
+                    <svg class="w-4 h-4 text-gray-400 submenu-arrow transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </a>
+                <div class="sidebar-submenu bg-gray-50">
+                    <a href="{% url 'admin:trading_dailyreport_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">日报</a>
+                    <a href="{% url 'admin:trading_monthlyreport_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">月报</a>
+                </div>
+            </div>
+
+            <div class="border-t my-4"></div>
+
+            <!-- 系统管理 -->
+            <div class="sidebar-item">
+                <a href="{% url 'admin:index' %}" class="flex items-center px-6 py-3 text-gray-700 hover:bg-emerald-50 transition">
+                    <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                    管理后台
+                </a>
+            </div>
+        </nav>
+    </aside>
+
+    <!-- 遮罩层（移动端） -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-10 hidden lg:hidden" onclick="closeSidebar()"></div>
+
+    <!-- 主内容区 -->
+    <main class="pt-16 lg:pl-64 transition-all duration-300">
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <!-- 仪表盘区域 -->
+            <section id="section-dashboard">
+            {% if user.is_authenticated %}
+            <!-- 数据概览卡片 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">总资产</p>
+                        <p class="text-2xl font-bold text-gray-800" id="total-balance">¥{{ total_balance|floatformat:2 }}</p>
+                    </div>
+                    <div class="bg-emerald-100 p-3 rounded-full">
+                        <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">总盈亏</p>
+                        <p class="text-2xl font-bold {% if total_profit >= 0 %}text-emerald-600{% else %}text-red-500{% endif %}" id="total-profit">
+                            {% if total_profit >= 0 %}+{% endif %}¥{{ total_profit|floatformat:2 }}
+                        </p>
+                    </div>
+                    <div class="{% if total_profit >= 0 %}bg-emerald-100{% else %}bg-red-100{% endif %} p-3 rounded-full">
+                        <svg class="w-6 h-6 {% if total_profit >= 0 %}text-emerald-600{% else %}text-red-500{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">账户数量</p>
+                        <p class="text-2xl font-bold text-gray-800" id="account-count">{{ account_count }}</p>
+                    </div>
+                    <div class="bg-blue-100 p-3 rounded-full">
+                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-gray-500 text-sm">胜率</p>
+                        <p class="text-2xl font-bold text-gray-800" id="win-rate">--</p>
+                    </div>
+                    <div class="bg-purple-100 p-3 rounded-full">
+                        <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 图表区域 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">盈亏趋势</h3>
+                <canvas id="pnlChart" height="200"></canvas>
+            </div>
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">月度盈亏</h3>
+                <canvas id="monthlyChart" height="200"></canvas>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">账户分布</h3>
+                <canvas id="distributionChart" height="200"></canvas>
+            </div>
+            <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">最近交易</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="text-left text-gray-500 border-b">
+                                <th class="pb-3">标的</th>
+                                <th class="pb-3">方向</th>
+                                <th class="pb-3">数量</th>
+                                <th class="pb-3">价格</th>
+                                <th class="pb-3">盈亏</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for trade in recent_trades %}
+                            <tr class="border-b hover:bg-gray-50">
+                                <td class="py-3 font-medium">{{ trade.symbol.code }}</td>
+                                <td class="py-3">
+                                    <span class="px-2 py-1 rounded text-xs {% if trade.side == 'buy' %}bg-red-100 text-red-600{% else %}bg-emerald-100 text-emerald-600{% endif %}">
+                                        {{ trade.get_side_display }}
+                                    </span>
+                                </td>
+                                <td class="py-3">{{ trade.quantity }}</td>
+                                <td class="py-3">{{ trade.price }}</td>
+                                <td class="py-3 {% if trade.profit_loss >= 0 %}text-emerald-600{% else %}text-red-500{% endif %}">
+                                    {% if trade.profit_loss >= 0 %}+{% endif %}{{ trade.profit_loss }}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="py-4 text-center text-gray-400">暂无交易记录</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        </section>
+
+        <!-- 投资工具区域 -->
+        <section id="section-tools" class="hidden">
+        <!-- 投资工具 -->
+        <h2 class="text-2xl font-bold text-gray-800 mb-6">投资工具</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- 复利计算器 -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                    </svg>
+                    复利计算器
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">本金</label>
+                        <input type="number" id="compound-principal" value="100000" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">年化收益率 (%)</label>
+                        <input type="number" id="compound-rate" value="10" step="0.1" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">投资年限</label>
+                        <input type="number" id="compound-years" value="10" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                    </div>
+                    <button onclick="calculateCompound()" class="w-full bg-emerald-500 text-white py-2 rounded-lg hover:bg-emerald-600 transition">计算</button>
+                    <div id="compound-result" class="p-4 bg-gray-50 rounded-lg hidden">
+                        <p class="text-sm text-gray-600">最终金额</p>
+                        <p class="text-2xl font-bold text-emerald-600" id="compound-final">¥0</p>
+                        <p class="text-sm text-gray-500 mt-2">总收益: <span id="compound-profit">¥0</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 仓位计算器 -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path>
+                    </svg>
+                    仓位计算器
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">账户资金</label>
+                        <input type="number" id="position-capital" value="100000" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">风险比例 (%)</label>
+                        <input type="number" id="position-risk" value="2" step="0.1" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">入场价格</label>
+                        <input type="number" id="position-entry" value="100" step="0.01" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">止损价格</label>
+                        <input type="number" id="position-stop" value="95" step="0.01" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <button onclick="calculatePosition()" class="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition">计算</button>
+                    <div id="position-result" class="p-4 bg-gray-50 rounded-lg hidden">
+                        <p class="text-sm text-gray-600">建议仓位</p>
+                        <p class="text-2xl font-bold text-blue-600" id="position-size">0 股</p>
+                        <p class="text-sm text-gray-500 mt-2">最大亏损: <span id="position-loss">¥0</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 盈亏比计算器 -->
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path>
+                    </svg>
+                    盈亏比计算器
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">入场价格</label>
+                        <input type="number" id="rr-entry" value="100" step="0.01" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">止损价格</label>
+                        <input type="number" id="rr-stop" value="95" step="0.01" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">目标价格</label>
+                        <input type="number" id="rr-target" value="115" step="0.01" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500">
+                    </div>
+                    <button onclick="calculateRR()" class="w-full bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600 transition">计算</button>
+                    <div id="rr-result" class="p-4 bg-gray-50 rounded-lg hidden">
+                        <p class="text-sm text-gray-600">盈亏比</p>
+                        <p class="text-2xl font-bold text-purple-600" id="rr-ratio">1:0</p>
+                        <div class="mt-2 text-sm">
+                            <p class="text-emerald-600">潜在盈利: <span id="rr-profit">0%</span></p>
+                            <p class="text-red-500">潜在亏损: <span id="rr-loss">0%</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </section>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-white border-t mt-12 lg:pl-64">
+        <div class="max-w-7xl mx-auto px-4 py-6 text-center text-gray-500 text-sm">
+            MyTrader 交易管理系统 &copy; 2025
+        </div>
+    </footer>
+
+    <script>
+        // 侧边栏控制
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        const toggleBtn = document.getElementById('sidebar-toggle');
+        let sidebarOpen = window.innerWidth >= 1024;
+
+        function updateSidebarState() {
+            if (window.innerWidth >= 1024) {
+                // 桌面端
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.add('hidden');
+            } else {
+                // 移动端
+                if (sidebarOpen) {
+                    sidebar.classList.remove('-translate-x-full');
+                    overlay.classList.remove('hidden');
+                } else {
+                    sidebar.classList.add('-translate-x-full');
+                    overlay.classList.add('hidden');
+                }
+            }
+        }
+
+        toggleBtn.addEventListener('click', function() {
+            sidebarOpen = !sidebarOpen;
+            if (window.innerWidth >= 1024) {
+                const main = document.querySelector('main');
+                const footer = document.querySelector('footer');
+                if (sidebarOpen) {
+                    sidebar.classList.remove('-translate-x-full');
+                    main.classList.add('lg:pl-64');
+                    footer.classList.add('lg:pl-64');
+                } else {
+                    sidebar.classList.add('-translate-x-full');
+                    main.classList.remove('lg:pl-64');
+                    footer.classList.remove('lg:pl-64');
+                }
+            } else {
+                updateSidebarState();
+            }
+        });
+
+        function closeSidebar() {
+            sidebarOpen = false;
+            updateSidebarState();
+        }
+
+        window.addEventListener('resize', function() {
+            if (window.innerWidth >= 1024) {
+                sidebarOpen = true;
+            }
+            updateSidebarState();
+        });
+
+        // 子菜单切换
+        function toggleSubmenu(element) {
+            const submenu = element.nextElementSibling;
+            const arrow = element.querySelector('.submenu-arrow');
+            submenu.classList.toggle('open');
+            arrow.classList.toggle('rotate-180');
+        }
+
+        // 区域切换
+        function showSection(section) {
+            document.querySelectorAll('main section').forEach(s => s.classList.add('hidden'));
+            document.getElementById('section-' + section).classList.remove('hidden');
+            document.querySelectorAll('.sidebar-item').forEach(item => item.classList.remove('active'));
+            event.target.closest('.sidebar-item').classList.add('active');
+            if (window.innerWidth < 1024) closeSidebar();
+        }
+
+        // 复利计算器
+        function calculateCompound() {
+            const principal = parseFloat(document.getElementById('compound-principal').value);
+            const rate = parseFloat(document.getElementById('compound-rate').value) / 100;
+            const years = parseInt(document.getElementById('compound-years').value);
+            const final = principal * Math.pow(1 + rate, years);
+            const profit = final - principal;
+            document.getElementById('compound-final').textContent = '¥' + final.toLocaleString('zh-CN', {maximumFractionDigits: 2});
+            document.getElementById('compound-profit').textContent = '¥' + profit.toLocaleString('zh-CN', {maximumFractionDigits: 2});
+            document.getElementById('compound-result').classList.remove('hidden');
+        }
+
+        // 仓位计算器
+        function calculatePosition() {
+            const capital = parseFloat(document.getElementById('position-capital').value);
+            const riskPercent = parseFloat(document.getElementById('position-risk').value) / 100;
+            const entry = parseFloat(document.getElementById('position-entry').value);
+            const stop = parseFloat(document.getElementById('position-stop').value);
+            const riskAmount = capital * riskPercent;
+            const riskPerShare = Math.abs(entry - stop);
+            const shares = Math.floor(riskAmount / riskPerShare);
+            document.getElementById('position-size').textContent = shares.toLocaleString() + ' 股';
+            document.getElementById('position-loss').textContent = '¥' + riskAmount.toLocaleString('zh-CN', {maximumFractionDigits: 2});
+            document.getElementById('position-result').classList.remove('hidden');
+        }
+
+        // 盈亏比计算器
+        function calculateRR() {
+            const entry = parseFloat(document.getElementById('rr-entry').value);
+            const stop = parseFloat(document.getElementById('rr-stop').value);
+            const target = parseFloat(document.getElementById('rr-target').value);
+            const risk = Math.abs(entry - stop);
+            const reward = Math.abs(target - entry);
+            const ratio = (reward / risk).toFixed(2);
+            const profitPercent = ((reward / entry) * 100).toFixed(2);
+            const lossPercent = ((risk / entry) * 100).toFixed(2);
+            document.getElementById('rr-ratio').textContent = '1:' + ratio;
+            document.getElementById('rr-profit').textContent = '+' + profitPercent + '%';
+            document.getElementById('rr-loss').textContent = '-' + lossPercent + '%';
+            document.getElementById('rr-result').classList.remove('hidden');
+        }
+
+        // 图表初始化
+        {% if user.is_authenticated %}
+        fetch('{% url "api_dashboard" %}')
+            .then(response => response.json())
+            .then(data => {
+                // 更新胜率
+                document.getElementById('win-rate').textContent = data.summary.win_rate + '%';
+
+                // 盈亏趋势图
+                new Chart(document.getElementById('pnlChart'), {
+                    type: 'line',
+                    data: {
+                        labels: data.pnl_trend.labels,
+                        datasets: [{
+                            label: '每日盈亏',
+                            data: data.pnl_trend.values,
+                            borderColor: '#10B981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
+
+                // 月度盈亏图
+                new Chart(document.getElementById('monthlyChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: data.monthly_pnl.labels,
+                        datasets: [{
+                            label: '月度盈亏',
+                            data: data.monthly_pnl.values,
+                            backgroundColor: data.monthly_pnl.values.map(v => v >= 0 ? '#10B981' : '#EF4444')
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } }
+                    }
+                });
+
+                // 账户分布图
+                new Chart(document.getElementById('distributionChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.account_distribution.labels,
+                        datasets: [{
+                            data: data.account_distribution.values,
+                            backgroundColor: ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { position: 'bottom' } }
+                    }
+                });
+            })
+            .catch(err => console.log('Dashboard data not available'));
+        {% endif %}
+    </script>
+</body>
+</html>
