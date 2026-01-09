@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#10B981">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="manifest" href="/static/trading/manifest.json">
+    <title>设置 - MyTrader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#10B981',
+                        danger: '#EF4444',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .dark body { background-color: #1a1a2e; }
+        .dark .bg-white { background-color: #16213e; }
+        .dark .bg-gray-100 { background-color: #1a1a2e; }
+        .dark .bg-gray-50 { background-color: #0f3460; }
+        .dark .text-gray-800, .dark .text-gray-700, .dark .text-gray-600 { color: #e4e4e7; }
+        .dark .text-gray-500, .dark .text-gray-400 { color: #a1a1aa; }
+        .dark .border-gray-200, .dark .border { border-color: #374151; }
+        .dark input, .dark select { background-color: #1e293b; color: #e4e4e7; border-color: #374151; }
+        .module-item { cursor: grab; }
+        .module-item.dragging { opacity: 0.5; }
+        .module-item.drag-over { border-top: 2px solid #10B981; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- 顶部导航 -->
+    <nav class="bg-white dark:bg-gray-800 shadow-lg fixed top-0 left-0 right-0 z-30">
+        <div class="max-w-4xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="{% url 'home' %}" class="text-gray-600 dark:text-gray-300 hover:text-gray-800 mr-4">
+                        <i class="fas fa-arrow-left"></i>
+                    </a>
+                    <span class="text-xl font-bold text-emerald-600">设置</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button id="theme-toggle" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <i class="fas fa-moon text-gray-600 dark:text-yellow-400" id="theme-icon"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="pt-20 pb-8 max-w-4xl mx-auto px-4">
+        <!-- 外观设置 -->
+        <section class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-6">
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
+                <i class="fas fa-palette mr-2 text-emerald-500"></i>
+                外观设置
+            </h2>
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="font-medium text-gray-700 dark:text-gray-200">主题模式</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">选择浅色、深色或跟随系统</p>
+                    </div>
+                    <select id="theme-select" class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                        <option value="light" {% if preference.theme == 'light' %}selected{% endif %}>浅色</option>
+                        <option value="dark" {% if preference.theme == 'dark' %}selected{% endif %}>深色</option>
+                        <option value="auto" {% if preference.theme == 'auto' %}selected{% endif %}>跟随系统</option>
+                    </select>
+                </div>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="font-medium text-gray-700 dark:text-gray-200">侧边栏默认收起</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">桌面端默认收起侧边栏</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="sidebar-collapsed" class="sr-only peer" {% if preference.sidebar_collapsed %}checked{% endif %}>
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <!-- 快捷键设置 -->
+        <section class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-6">
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
+                <i class="fas fa-keyboard mr-2 text-blue-500"></i>
+                快捷键设置
+            </h2>
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="font-medium text-gray-700 dark:text-gray-200">启用快捷键</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">使用键盘快捷键快速操作</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="shortcuts-enabled" class="sr-only peer" {% if preference.shortcuts_enabled %}checked{% endif %}>
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                </div>
+                <div class="border-t pt-4">
+                    <p class="font-medium text-gray-700 dark:text-gray-200 mb-3">可用快捷键</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">返回首页</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">G H</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">风控中心</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">G R</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">数据分析</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">G A</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">设置页面</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">G S</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">切换主题</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">T</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">切换侧边栏</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">B</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">搜索</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">/</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">显示快捷键帮助</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">?</kbd>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 通知设置 -->
+        <section class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-6">
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
+                <i class="fas fa-bell mr-2 text-yellow-500"></i>
+                通知设置
+            </h2>
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="font-medium text-gray-700 dark:text-gray-200">通知声音</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">收到通知时播放提示音</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="notification-sound" class="sr-only peer" {% if preference.notification_sound %}checked{% endif %}>
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <!-- 仪表盘布局 -->
+        <section class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-6">
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
+                <i class="fas fa-th-large mr-2 text-purple-500"></i>
+                仪表盘布局
+                <span class="ml-2 text-xs text-gray-400 font-normal">拖拽排序</span>
+            </h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">选择要在首页显示的模块，拖拽调整顺序</p>
+            <div id="module-list" class="space-y-2">
+                {% for module in default_layout.modules %}
+                <div class="module-item flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600" data-id="{{ module.id }}" draggable="true">
+                    <div class="flex items-center">
+                        <i class="fas fa-grip-vertical text-gray-400 mr-3 cursor-grab"></i>
+                        <span class="text-gray-700 dark:text-gray-200">{{ module.name }}</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" class="module-toggle sr-only peer" data-id="{{ module.id }}" {% if module.enabled %}checked{% endif %}>
+                        <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+            <button onclick="resetLayout()" class="mt-4 text-sm text-emerald-600 hover:text-emerald-700">
+                <i class="fas fa-undo mr-1"></i>恢复默认布局
+            </button>
+        </section>
+
+        <!-- PWA安装 -->
+        <section id="pwa-section" class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-6 hidden">
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
+                <i class="fas fa-mobile-alt mr-2 text-green-500"></i>
+                安装应用
+            </h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">将 MyTrader 安装到您的设备，获得更好的体验</p>
+            <button id="install-btn" class="bg-emerald-500 text-white px-4 py-2 rounded-lg hover:bg-emerald-600 transition">
+                <i class="fas fa-download mr-2"></i>安装到设备
+            </button>
+        </section>
+
+        <!-- 保存提示 -->
+        <div id="save-toast" class="fixed bottom-4 right-4 bg-emerald-500 text-white px-4 py-2 rounded-lg shadow-lg transform translate-y-20 opacity-0 transition-all duration-300">
+            <i class="fas fa-check mr-2"></i>设置已保存
+        </div>
+    </main>
+
+    <script>
+        // 主题管理
+        function getTheme() {
+            return localStorage.getItem('theme') || '{{ preference.theme }}';
+        }
+
+        function setTheme(theme) {
+            localStorage.setItem('theme', theme);
+            applyTheme(theme);
+            savePreference({ theme });
+        }
+
+        function applyTheme(theme) {
+            const html = document.documentElement;
+            const icon = document.getElementById('theme-icon');
+
+            if (theme === 'auto') {
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                theme = prefersDark ? 'dark' : 'light';
+            }
+
+            if (theme === 'dark') {
+                html.classList.add('dark');
+                icon.classList.remove('fa-moon');
+                icon.classList.add('fa-sun');
+            } else {
+                html.classList.remove('dark');
+                icon.classList.remove('fa-sun');
+                icon.classList.add('fa-moon');
+            }
+        }
+
+        // 初始化主题
+        applyTheme(getTheme());
+
+        // 主题切换按钮
+        document.getElementById('theme-toggle').addEventListener('click', function() {
+            const current = getTheme();
+            const next = current === 'light' ? 'dark' : 'light';
+            document.getElementById('theme-select').value = next;
+            setTheme(next);
+        });
+
+        // 主题选择器
+        document.getElementById('theme-select').addEventListener('change', function() {
+            setTheme(this.value);
+        });
+
+        // 监听系统主题变化
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+            if (getTheme() === 'auto') {
+                applyTheme('auto');
+            }
+        });
+
+        // 保存偏好设置
+        function savePreference(data) {
+            fetch('{% url "api_update_preference" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify(data)
+            }).then(() => showToast());
+        }
+
+        function showToast() {
+            const toast = document.getElementById('save-toast');
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 2000);
+        }
+
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // 开关事件
+        document.getElementById('sidebar-collapsed').addEventListener('change', function() {
+            savePreference({ sidebar_collapsed: this.checked });
+        });
+
+        document.getElementById('shortcuts-enabled').addEventListener('change', function() {
+            savePreference({ shortcuts_enabled: this.checked });
+            localStorage.setItem('shortcuts_enabled', this.checked);
+        });
+
+        document.getElementById('notification-sound').addEventListener('change', function() {
+            savePreference({ notification_sound: this.checked });
+        });
+
+        // 模块拖拽排序
+        const moduleList = document.getElementById('module-list');
+        let draggedItem = null;
+
+        moduleList.addEventListener('dragstart', function(e) {
+            if (e.target.classList.contains('module-item')) {
+                draggedItem = e.target;
+                e.target.classList.add('dragging');
+            }
+        });
+
+        moduleList.addEventListener('dragend', function(e) {
+            if (e.target.classList.contains('module-item')) {
+                e.target.classList.remove('dragging');
+                saveModuleLayout();
+            }
+        });
+
+        moduleList.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            const afterElement = getDragAfterElement(moduleList, e.clientY);
+            const dragging = document.querySelector('.dragging');
+            if (afterElement == null) {
+                moduleList.appendChild(dragging);
+            } else {
+                moduleList.insertBefore(dragging, afterElement);
+            }
+        });
+
+        function getDragAfterElement(container, y) {
+            const draggableElements = [...container.querySelectorAll('.module-item:not(.dragging)')];
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        // 模块开关
+        document.querySelectorAll('.module-toggle').forEach(toggle => {
+            toggle.addEventListener('change', saveModuleLayout);
+        });
+
+        function saveModuleLayout() {
+            const modules = [];
+            document.querySelectorAll('.module-item').forEach((item, index) => {
+                const id = item.dataset.id;
+                const enabled = item.querySelector('.module-toggle').checked;
+                modules.push({ id, enabled, order: index + 1 });
+            });
+
+            fetch('{% url "api_update_dashboard_layout" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ modules })
+            }).then(() => showToast());
+        }
+
+        function resetLayout() {
+            document.querySelectorAll('.module-toggle').forEach(toggle => {
+                toggle.checked = true;
+            });
+            saveModuleLayout();
+        }
+
+        // PWA安装
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            document.getElementById('pwa-section').classList.remove('hidden');
+        });
+
+        document.getElementById('install-btn')?.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    document.getElementById('pwa-section').classList.add('hidden');
+                }
+                deferredPrompt = null;
+            }
+        });
+
+        // 注册Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/trading/sw.js')
+                .then(reg => console.log('SW registered'))
+                .catch(err => console.log('SW registration failed'));
+        }
+
+        // 快捷键
+        let keySequence = '';
+        let keyTimeout;
+
+        document.addEventListener('keydown', function(e) {
+            if (!localStorage.getItem('shortcuts_enabled') || localStorage.getItem('shortcuts_enabled') === 'false') return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+            clearTimeout(keyTimeout);
+            keySequence += e.key.toLowerCase();
+
+            keyTimeout = setTimeout(() => {
+                keySequence = '';
+            }, 500);
+
+            // 单键快捷键
+            if (keySequence === 't') {
+                e.preventDefault();
+                document.getElementById('theme-toggle').click();
+                keySequence = '';
+            } else if (keySequence === '?') {
+                e.preventDefault();
+                alert('快捷键帮助:\n\nG H - 返回首页\nG R - 风控中心\nG A - 数据分析\nG S - 设置页面\nT - 切换主题\nB - 切换侧边栏\n/ - 搜索\n? - 显示帮助');
+                keySequence = '';
+            }
+
+            // 组合快捷键 G+X
+            if (keySequence === 'gh') {
+                window.location.href = '/';
+                keySequence = '';
+            } else if (keySequence === 'gr') {
+                window.location.href = '/risk/';
+                keySequence = '';
+            } else if (keySequence === 'ga') {
+                window.location.href = '/analytics/';
+                keySequence = '';
+            } else if (keySequence === 'gs') {
+                window.location.href = '/settings/';
+                keySequence = '';
+            }
+        });
+    </script>
+</body>
+</html>

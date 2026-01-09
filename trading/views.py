@@ -4,13 +4,15 @@ from django.db.models import Sum, Count, Avg
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from datetime import timedelta, datetime
 import json
 import logging
-from .models import Account, TradeLog, DailyReport, Position, Strategy, Notification, PriceAlert, Symbol, TradeTag
+from .models import Account, TradeLog, DailyReport, Position, Strategy, Notification, PriceAlert, Symbol, TradeTag, UserPreference
 from .analytics import TradeAnalytics
 from .notifications import NotificationService
+from .utils import api_login_required, parse_date, parse_date_range, check_webhook_rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -908,23 +910,22 @@ def heatmap_api(request):
     # 获取日报数据
     queryset = DailyReport.objects.filter(
         account__owner=request.user,
-        date__year=year
+        report_date__year=year
     )
 
     if account_id:
         queryset = queryset.filter(account_id=account_id)
 
     # 按日期聚合盈亏
-    from django.db.models.functions import TruncDate
-    daily_pnl = queryset.values('date').annotate(
-        pnl=Sum('realized_pnl')
-    ).order_by('date')
+    daily_pnl = queryset.values('report_date').annotate(
+        pnl=Sum('profit_loss')
+    ).order_by('report_date')
 
     # 转换为热力图格式 [[日期, 盈亏值], ...]
     data = []
     for item in daily_pnl:
         data.append([
-            item['date'].strftime('%Y-%m-%d'),
+            item['report_date'].strftime('%Y-%m-%d'),
             float(item['pnl'] or 0)
         ])
 
@@ -1650,15 +1651,24 @@ def api_download_backup(request, filename):
     import os
     from django.conf import settings
 
-    backup_dir = os.path.join(settings.BASE_DIR, 'backups')
-    filepath = os.path.join(backup_dir, filename)
+    # 安全检查：防止路径遍历攻击
+    safe_filename = os.path.basename(filename)
+    if not safe_filename.startswith('backup_') or not safe_filename.endswith('.json'):
+        return JsonResponse({'error': '无效的文件名'}, status=400)
 
-    if not os.path.exists(filepath) or not filename.startswith('backup_'):
+    backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+    filepath = os.path.join(backup_dir, safe_filename)
+
+    # 确保文件路径在备份目录内
+    if not os.path.realpath(filepath).startswith(os.path.realpath(backup_dir)):
+        return JsonResponse({'error': '无效的文件路径'}, status=400)
+
+    if not os.path.exists(filepath):
         return JsonResponse({'error': '文件不存在'}, status=404)
 
     with open(filepath, 'rb') as f:
         response = HttpResponse(f.read(), content_type='application/json')
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response['Content-Disposition'] = f'attachment; filename="{safe_filename}"'
         return response
 
 
@@ -2128,3 +2138,89 @@ MyTrader 交易管理系统
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=400)
 
+
+
+
+# ==================== 用户偏好设置 API ====================
+
+@login_required
+def api_user_preference(request):
+    """获取用户偏好设置 API"""
+    pref, created = UserPreference.objects.get_or_create(
+        user=request.user,
+        defaults={'dashboard_layout': UserPreference.get_default_layout()}
+    )
+    return JsonResponse({
+        'theme': pref.theme,
+        'dashboard_layout': pref.dashboard_layout or UserPreference.get_default_layout(),
+        'shortcuts_enabled': pref.shortcuts_enabled,
+        'sidebar_collapsed': pref.sidebar_collapsed,
+        'notification_sound': pref.notification_sound,
+    })
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_update_preference(request):
+    """更新用户偏好设置 API"""
+    try:
+        data = json.loads(request.body)
+        pref, created = UserPreference.objects.get_or_create(
+            user=request.user,
+            defaults={'dashboard_layout': UserPreference.get_default_layout()}
+        )
+
+        if 'theme' in data:
+            pref.theme = data['theme']
+        if 'dashboard_layout' in data:
+            pref.dashboard_layout = data['dashboard_layout']
+        if 'shortcuts_enabled' in data:
+            pref.shortcuts_enabled = data['shortcuts_enabled']
+        if 'sidebar_collapsed' in data:
+            pref.sidebar_collapsed = data['sidebar_collapsed']
+        if 'notification_sound' in data:
+            pref.notification_sound = data['notification_sound']
+
+        pref.save()
+        return JsonResponse({'status': 'success'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_update_dashboard_layout(request):
+    """更新仪表盘布局 API"""
+    try:
+        data = json.loads(request.body)
+        modules = data.get('modules', [])
+
+        pref, created = UserPreference.objects.get_or_create(
+            user=request.user,
+            defaults={'dashboard_layout': UserPreference.get_default_layout()}
+        )
+
+        layout = pref.dashboard_layout or {}
+        layout['modules'] = modules
+        pref.dashboard_layout = layout
+        pref.save()
+
+        return JsonResponse({'status': 'success'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+def settings_page(request):
+    """用户设置页面"""
+    if not request.user.is_authenticated:
+        return redirect('admin:login')
+
+    pref, created = UserPreference.objects.get_or_create(
+        user=request.user,
+        defaults={'dashboard_layout': UserPreference.get_default_layout()}
+    )
+
+    return render(request, 'trading/settings.html', {
+        'preference': pref,
+        'default_layout': UserPreference.get_default_layout(),
+    })

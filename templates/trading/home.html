@@ -3,12 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#10B981">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="MyTrader">
+    <link rel="manifest" href="/static/trading/manifest.json">
+    <link rel="apple-touch-icon" href="/static/trading/icons/icon-192.png">
     <title>MyTrader - 交易管理系统</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -20,6 +27,19 @@
         }
     </script>
     <style>
+        /* 深色模式样式 */
+        .dark body { background-color: #1a1a2e; }
+        .dark .bg-white { background-color: #16213e; }
+        .dark .bg-gray-100 { background-color: #1a1a2e; }
+        .dark .bg-gray-50 { background-color: #0f3460; }
+        .dark .text-gray-800, .dark .text-gray-700, .dark .text-gray-600 { color: #e4e4e7; }
+        .dark .text-gray-500, .dark .text-gray-400 { color: #a1a1aa; }
+        .dark .border-gray-200, .dark .border { border-color: #374151; }
+        .dark .hover\\:bg-gray-100:hover { background-color: #374151; }
+        .dark .hover\\:bg-emerald-50:hover { background-color: rgba(16, 185, 129, 0.2); }
+        .dark .shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
+        .dark .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); }
+
         .sidebar-submenu {
             max-height: 0;
             overflow: hidden;
@@ -34,6 +54,11 @@
         }
         .sidebar-item.active > a svg {
             color: #10B981;
+        }
+
+        /* 快捷键提示框 */
+        #shortcut-help {
+            backdrop-filter: blur(4px);
         }
     </style>
 </head>
@@ -52,6 +77,14 @@
                 </div>
                 <div class="flex items-center space-x-4">
                     {% if user.is_authenticated %}
+                    <!-- 主题切换 -->
+                    <button id="theme-toggle" class="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition" title="切换主题 (T)">
+                        <i class="fas fa-moon" id="theme-icon"></i>
+                    </button>
+                    <!-- 设置 -->
+                    <a href="{% url 'settings' %}" class="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition" title="设置 (G S)">
+                        <i class="fas fa-cog"></i>
+                    </a>
                     <!-- 通知铃铛 -->
                     <div class="relative" id="notification-dropdown">
                         <button onclick="toggleNotificationDropdown()" class="relative p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition">
@@ -259,6 +292,16 @@
                 </a>
             </div>
 
+            <!-- 自动化扩展 -->
+            <div class="sidebar-item">
+                <a href="{% url 'automation_extended' %}" class="flex items-center px-6 py-3 text-gray-700 hover:bg-emerald-50 transition">
+                    <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                    自动化扩展
+                </a>
+            </div>
+
             <!-- 量化交易 -->
             <div class="sidebar-item">
                 <a href="javascript:void(0)" class="flex items-center justify-between px-6 py-3 text-gray-700 hover:bg-emerald-50 transition" onclick="toggleSubmenu(this)">
@@ -302,6 +345,17 @@
             </div>
 
             <div class="border-t my-4"></div>
+
+            <!-- 用户设置 -->
+            <div class="sidebar-item">
+                <a href="{% url 'settings' %}" class="flex items-center px-6 py-3 text-gray-700 hover:bg-emerald-50 transition">
+                    <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                    用户设置
+                </a>
+            </div>
 
             <!-- 系统管理 -->
             <div class="sidebar-item">
@@ -858,6 +912,184 @@
             })
             .catch(err => console.log('Dashboard data not available'));
         {% endif %}
+
+        // ==================== 主题管理 ====================
+        function getTheme() {
+            return localStorage.getItem('theme') || 'light';
+        }
+
+        function setTheme(theme) {
+            localStorage.setItem('theme', theme);
+            applyTheme(theme);
+        }
+
+        function applyTheme(theme) {
+            const html = document.documentElement;
+            const icon = document.getElementById('theme-icon');
+
+            if (theme === 'auto') {
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                theme = prefersDark ? 'dark' : 'light';
+            }
+
+            if (theme === 'dark') {
+                html.classList.add('dark');
+                if (icon) {
+                    icon.classList.remove('fa-moon');
+                    icon.classList.add('fa-sun');
+                    icon.classList.add('text-yellow-400');
+                }
+            } else {
+                html.classList.remove('dark');
+                if (icon) {
+                    icon.classList.remove('fa-sun', 'text-yellow-400');
+                    icon.classList.add('fa-moon');
+                }
+            }
+        }
+
+        // 初始化主题
+        applyTheme(getTheme());
+
+        // 主题切换按钮
+        document.getElementById('theme-toggle')?.addEventListener('click', function() {
+            const current = getTheme();
+            const next = current === 'light' ? 'dark' : 'light';
+            setTheme(next);
+        });
+
+        // 监听系统主题变化
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+            if (getTheme() === 'auto') {
+                applyTheme('auto');
+            }
+        });
+
+        // ==================== 键盘快捷键 ====================
+        let keySequence = '';
+        let keyTimeout;
+
+        document.addEventListener('keydown', function(e) {
+            // 检查是否启用快捷键
+            if (localStorage.getItem('shortcuts_enabled') === 'false') return;
+            // 忽略输入框
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+            clearTimeout(keyTimeout);
+            keySequence += e.key.toLowerCase();
+
+            keyTimeout = setTimeout(() => {
+                keySequence = '';
+            }, 500);
+
+            // 单键快捷键
+            if (keySequence === 't') {
+                e.preventDefault();
+                document.getElementById('theme-toggle')?.click();
+                keySequence = '';
+            } else if (keySequence === 'b') {
+                e.preventDefault();
+                document.getElementById('sidebar-toggle')?.click();
+                keySequence = '';
+            } else if (keySequence === '/') {
+                e.preventDefault();
+                // 可以打开搜索框
+                keySequence = '';
+            } else if (keySequence === '?') {
+                e.preventDefault();
+                showShortcutHelp();
+                keySequence = '';
+            }
+
+            // 组合快捷键 G+X
+            if (keySequence === 'gh') {
+                window.location.href = '/';
+                keySequence = '';
+            } else if (keySequence === 'gr') {
+                window.location.href = '/risk/';
+                keySequence = '';
+            } else if (keySequence === 'ga') {
+                window.location.href = '/analytics/';
+                keySequence = '';
+            } else if (keySequence === 'gs') {
+                window.location.href = '/settings/';
+                keySequence = '';
+            } else if (keySequence === 'gd') {
+                window.location.href = '/data-management/';
+                keySequence = '';
+            }
+        });
+
+        function showShortcutHelp() {
+            const existing = document.getElementById('shortcut-help');
+            if (existing) {
+                existing.remove();
+                return;
+            }
+
+            const help = document.createElement('div');
+            help.id = 'shortcut-help';
+            help.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+            help.innerHTML = `
+                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800 dark:text-white">键盘快捷键</h3>
+                        <button onclick="this.closest('#shortcut-help').remove()" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">返回首页</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">G H</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">风控中心</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">G R</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">数据分析</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">G A</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">设置页面</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">G S</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">切换主题</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">T</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">切换侧边栏</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">B</kbd>
+                        </div>
+                        <div class="flex justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                            <span class="text-gray-600 dark:text-gray-300">显示帮助</span>
+                            <kbd class="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded text-xs">?</kbd>
+                        </div>
+                    </div>
+                    <p class="mt-4 text-xs text-gray-400 text-center">按 ESC 或点击外部关闭</p>
+                </div>
+            `;
+            help.addEventListener('click', function(e) {
+                if (e.target === help) help.remove();
+            });
+            document.body.appendChild(help);
+        }
+
+        // ESC关闭帮助
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                document.getElementById('shortcut-help')?.remove();
+            }
+        });
+
+        // ==================== PWA Service Worker ====================
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/trading/sw.js')
+                .then(reg => console.log('Service Worker registered'))
+                .catch(err => console.log('Service Worker registration failed:', err));
+        }
     </script>
 </body>
 </html>

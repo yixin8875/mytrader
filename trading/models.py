@@ -135,7 +135,11 @@ class Symbol(models.Model):
         return f"{self.code} - {self.name}"
 
     @property
-    def contract_value(self, price=None):
+    def contract_value(self):
+        """返回合约乘数"""
+        return self.contract_size
+
+    def get_contract_value(self, price=None):
         """计算合约价值
         Args:
             price: 价格，如果为None则返回乘数
@@ -1416,3 +1420,46 @@ class StrategySignal(models.Model):
 
     def __str__(self):
         return f"{self.strategy_name} - {self.symbol} {self.get_signal_type_display()}"
+
+
+class UserPreference(models.Model):
+    """用户偏好设置"""
+    THEME_CHOICES = [
+        ('light', '浅色'),
+        ('dark', '深色'),
+        ('auto', '跟随系统'),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name='用户',
+                                related_name='preference')
+    theme = models.CharField('主题', max_length=10, choices=THEME_CHOICES, default='light')
+    dashboard_layout = models.JSONField('仪表盘布局', default=dict,
+                                        help_text='存储用户自定义的仪表盘模块配置')
+    shortcuts_enabled = models.BooleanField('启用快捷键', default=True)
+    sidebar_collapsed = models.BooleanField('侧边栏收起', default=False)
+    notification_sound = models.BooleanField('通知声音', default=True)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '用户偏好'
+        verbose_name_plural = '用户偏好'
+
+    def __str__(self):
+        return f"{self.user.username} 的偏好设置"
+
+    @classmethod
+    def get_default_layout(cls):
+        """默认仪表盘布局"""
+        return {
+            'modules': [
+                {'id': 'overview', 'name': '数据概览', 'enabled': True, 'order': 1},
+                {'id': 'pnl_chart', 'name': '盈亏趋势', 'enabled': True, 'order': 2},
+                {'id': 'monthly_chart', 'name': '月度盈亏', 'enabled': True, 'order': 3},
+                {'id': 'distribution', 'name': '账户分布', 'enabled': True, 'order': 4},
+                {'id': 'recent_trades', 'name': '最近交易', 'enabled': True, 'order': 5},
+                {'id': 'positions', 'name': '当前持仓', 'enabled': False, 'order': 6},
+                {'id': 'alerts', 'name': '价格提醒', 'enabled': False, 'order': 7},
+                {'id': 'signals', 'name': '策略信号', 'enabled': False, 'order': 8},
+            ]
+        }

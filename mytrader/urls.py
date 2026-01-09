@@ -90,5 +90,23 @@ urlpatterns = [
     path('api/data/backups/<str:filename>/delete/', views.api_delete_backup, name='api_delete_backup'),
     path('api/data/quality-check/', views.api_data_quality_check, name='api_data_quality_check'),
     path('api/data/sources/', views.api_data_sources, name='api_data_sources'),
+    # 自动化扩展
+    path('automation-extended/', views.automation_extended_page, name='automation_extended'),
+    path('api/signals/', views.api_strategy_signals, name='api_strategy_signals'),
+    path('api/signals/create/', views.api_create_strategy_signal, name='api_create_strategy_signal'),
+    path('api/webhooks/', views.api_webhooks, name='api_webhooks'),
+    path('api/webhooks/create/', views.api_create_webhook, name='api_create_webhook'),
+    path('api/webhooks/<int:webhook_id>/delete/', views.api_delete_webhook, name='api_delete_webhook'),
+    path('api/webhook/<str:secret_key>/', views.api_webhook_receive, name='api_webhook_receive'),
+    path('api/reports/', views.api_scheduled_reports, name='api_scheduled_reports'),
+    path('api/reports/create/', views.api_create_scheduled_report, name='api_create_scheduled_report'),
+    path('api/reports/<int:report_id>/toggle/', views.api_toggle_scheduled_report, name='api_toggle_scheduled_report'),
+    path('api/reports/<int:report_id>/delete/', views.api_delete_scheduled_report, name='api_delete_scheduled_report'),
+    path('api/reports/test/', views.api_send_test_report, name='api_send_test_report'),
+    # 用户设置
+    path('settings/', views.settings_page, name='settings'),
+    path('api/preference/', views.api_user_preference, name='api_user_preference'),
+    path('api/preference/update/', views.api_update_preference, name='api_update_preference'),
+    path('api/preference/dashboard/', views.api_update_dashboard_layout, name='api_update_dashboard_layout'),
     path('admin/', admin.site.urls),
 ]
