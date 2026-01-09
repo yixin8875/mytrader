@@ -390,7 +390,12 @@ class TradeLog(models.Model):
         - 做空开仓(sell+open)：持仓减少（负数表示空头）
         - 做空平仓(buy+close)：持仓增加（向0靠近）
         """
-        from decimal import Decimal
+        from decimal import Decimal, InvalidOperation
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # 持仓计算边界值
+        MAX_POSITION_VALUE = Decimal('1e15')  # 1000万亿
 
         # 使用事务和行锁确保数据一致性
         with transaction.atomic():
@@ -418,14 +423,28 @@ class TradeLog(models.Model):
 
             exec_price = self.executed_price or self.price
 
+            # 边界检查辅助函数
+            def safe_calculate_cost(qty, price, add_qty, add_price):
+                """安全计算加权平均成本，带边界检查"""
+                try:
+                    total_cost = Decimal(str(qty)) * Decimal(str(price)) + \
+                                 Decimal(str(add_qty)) * Decimal(str(add_price))
+                    if abs(total_cost) > MAX_POSITION_VALUE:
+                        logger.error(f'持仓价值超出限制: {total_cost}')
+                        raise ValueError('持仓价值超出最大允许范围')
+                    return total_cost
+                except (InvalidOperation, ValueError) as e:
+                    logger.error(f'持仓计算错误: {e}')
+                    raise
+
             # 根据交易类型和方向更新持仓
             if self.trade_type in ('open', 'add'):
                 # 开仓/加仓
                 if self.side == 'buy':
                     # 做多开仓：增加正数持仓
                     if position.quantity >= 0:
-                        # 加权平均成本
-                        total_cost = position.quantity * position.avg_price + self.quantity * exec_price
+                        # 加权平均成本（带边界检查）
+                        total_cost = safe_calculate_cost(position.quantity, position.avg_price, self.quantity, exec_price)
                         position.quantity += self.quantity
                         position.avg_price = total_cost / position.quantity if position.quantity > 0 else exec_price
                     else:
@@ -436,7 +455,7 @@ class TradeLog(models.Model):
                 else:
                     # 做空开仓：增加负数持仓
                     if position.quantity <= 0:
-                        total_cost = abs(position.quantity) * position.avg_price + self.quantity * exec_price
+                        total_cost = safe_calculate_cost(abs(position.quantity), position.avg_price, self.quantity, exec_price)
                         position.quantity -= self.quantity
                         position.avg_price = total_cost / abs(position.quantity) if position.quantity != 0 else exec_price
                     else:

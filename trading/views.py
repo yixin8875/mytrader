@@ -12,7 +12,7 @@ import logging
 from .models import Account, TradeLog, DailyReport, Position, Strategy, Notification, PriceAlert, Symbol, TradeTag, UserPreference, RiskRule, RiskSnapshot
 from .analytics import TradeAnalytics
 from .notifications import NotificationService
-from .utils import api_login_required, parse_date, parse_date_range, check_webhook_rate_limit, verify_webhook_signature
+from .utils import api_login_required, parse_date, parse_date_range, check_webhook_rate_limit, verify_webhook_signature, rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +213,7 @@ def import_export_page(request):
     })
 
 
+@rate_limit(max_requests=10, window_seconds=60)
 def export_trades(request):
     """导出交易记录"""
     if not request.user.is_authenticated:
@@ -255,6 +256,7 @@ def export_trades(request):
     return response
 
 
+@rate_limit(max_requests=10, window_seconds=60)
 def export_accounts(request):
     """导出账户数据"""
     if not request.user.is_authenticated:
@@ -271,6 +273,7 @@ def export_accounts(request):
     return response
 
 
+@rate_limit(max_requests=10, window_seconds=60)
 def export_positions(request):
     """导出持仓数据"""
     if not request.user.is_authenticated:
@@ -295,6 +298,7 @@ def export_positions(request):
     return response
 
 
+@rate_limit(max_requests=10, window_seconds=60)
 def export_symbols(request):
     """导出交易标的"""
     if not request.user.is_authenticated:
@@ -311,6 +315,7 @@ def export_symbols(request):
     return response
 
 
+@rate_limit(max_requests=10, window_seconds=60)
 def export_analysis(request):
     """导出分析报告"""
     if not request.user.is_authenticated:
@@ -1128,7 +1133,7 @@ def api_drawdown_analysis(request):
             trade_time__date__gte=max_dd_start,
             trade_time__date__lte=max_dd_end,
             profit_loss__lt=0
-        ).order_by('profit_loss')[:10]
+        ).select_related('symbol').prefetch_related('tags').order_by('profit_loss')[:10]
 
         if account_id:
             trades = trades.filter(account_id=account_id)
@@ -1703,10 +1708,19 @@ def api_delete_backup(request, filename):
     import os
     from django.conf import settings
 
-    backup_dir = os.path.join(settings.BASE_DIR, 'backups')
-    filepath = os.path.join(backup_dir, filename)
+    # 安全检查：防止路径遍历攻击
+    safe_filename = os.path.basename(filename)
+    if not safe_filename.startswith('backup_') or not safe_filename.endswith('.json'):
+        return JsonResponse({'error': '无效的文件名'}, status=400)
 
-    if not os.path.exists(filepath) or not filename.startswith('backup_'):
+    backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+    filepath = os.path.join(backup_dir, safe_filename)
+
+    # 确保文件路径在备份目录内
+    if not os.path.realpath(filepath).startswith(os.path.realpath(backup_dir)):
+        return JsonResponse({'error': '无效的文件路径'}, status=400)
+
+    if not os.path.exists(filepath):
         return JsonResponse({'error': '文件不存在'}, status=404)
 
     os.remove(filepath)

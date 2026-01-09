@@ -13,6 +13,14 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# Celery 任务 ID 格式验证
+CELERY_TASK_ID_PATTERN = re.compile(r'^[a-f0-9\-]{36}$')
+
+
+def validate_task_id(task_id):
+    """验证 Celery 任务 ID 格式"""
+    return bool(task_id and CELERY_TASK_ID_PATTERN.match(task_id))
+
 
 def validate_symbol(symbol):
     """验证股票代码格式（6位数字）"""
@@ -105,7 +113,7 @@ def fetch_task_status(request, task_id):
     """查询下载任务状态"""
     from celery.result import AsyncResult
 
-    if not re.match(r'^[a-f0-9\-]{36}$', task_id):
+    if not validate_task_id(task_id):
         return JsonResponse({'status': 'error', 'message': '无效的任务ID'}, status=400)
 
     result = AsyncResult(task_id)
@@ -252,7 +260,7 @@ def backtest_task_status(request, task_id):
     from celery.result import AsyncResult
 
     # 验证 task_id 格式（防止注入）
-    if not re.match(r'^[a-f0-9\-]{36}$', task_id):
+    if not validate_task_id(task_id):
         return JsonResponse({'status': 'error', 'message': '无效的任务ID'}, status=400)
 
     result = AsyncResult(task_id)

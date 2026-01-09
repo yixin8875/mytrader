@@ -19,7 +19,7 @@ def api_login_required(view_func):
     return wrapper
 
 
-def verify_webhook_signature(request, secret_key, max_age_seconds=300):
+def verify_webhook_signature(request, secret_key, max_age_seconds=300, require_signature=True):
     """验证 Webhook 请求签名
 
     签名算法: HMAC-SHA256
@@ -30,6 +30,7 @@ def verify_webhook_signature(request, secret_key, max_age_seconds=300):
         request: Django request 对象
         secret_key: Webhook 密钥
         max_age_seconds: 最大允许的时间差（防重放攻击）
+        require_signature: 是否强制要求签名（默认True）
 
     Returns:
         (valid, error_message) 元组
@@ -37,8 +38,10 @@ def verify_webhook_signature(request, secret_key, max_age_seconds=300):
     signature_header = request.headers.get('X-Signature-256', '')
     timestamp_header = request.headers.get('X-Timestamp', '')
 
-    # 如果没有签名头，允许通过（向后兼容）
+    # 如果没有签名头
     if not signature_header:
+        if require_signature:
+            return False, '缺少签名头 X-Signature-256'
         return True, None
 
     # 验证时间戳（防重放攻击）
@@ -143,3 +146,45 @@ def check_webhook_rate_limit(secret_key, max_requests=60, window_seconds=60):
     reset_time = int(rate_info['window_start'] + window_seconds - now)
 
     return True, remaining, reset_time
+
+
+# 通用速率限制缓存
+_rate_limit_cache = {}
+
+
+def rate_limit(max_requests=10, window_seconds=60):
+    """速率限制装饰器
+
+    Args:
+        max_requests: 时间窗口内最大请求数
+        window_seconds: 时间窗口（秒）
+    """
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(request, *args, **kwargs):
+            # 使用用户ID和函数名作为限制键
+            user_id = request.user.id if request.user.is_authenticated else 'anonymous'
+            key = f'{user_id}:{view_func.__name__}'
+
+            now = time.time()
+            if key not in _rate_limit_cache:
+                _rate_limit_cache[key] = {'count': 0, 'window_start': now}
+
+            rate_info = _rate_limit_cache[key]
+
+            # 检查是否需要重置窗口
+            if now - rate_info['window_start'] > window_seconds:
+                rate_info['count'] = 0
+                rate_info['window_start'] = now
+
+            # 检查是否超过限制
+            if rate_info['count'] >= max_requests:
+                reset_time = int(rate_info['window_start'] + window_seconds - now)
+                return JsonResponse({
+                    'error': f'请求过于频繁，请 {reset_time} 秒后重试'
+                }, status=429)
+
+            rate_info['count'] += 1
+            return view_func(request, *args, **kwargs)
+        return wrapper
+    return decorator
