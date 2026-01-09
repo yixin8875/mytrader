@@ -1,8 +1,50 @@
 import backtrader as bt
 import pandas as pd
+import re
 from decimal import Decimal
-from datetime import datetime
-from quant.models import StockData, Strategy, BacktestResult
+from datetime import datetime, date
+from quant.models import StockData, QuantStrategy, BacktestResult
+
+
+class BacktestValidationError(Exception):
+    """回测数据验证错误"""
+    pass
+
+
+def validate_symbol(symbol):
+    """验证股票代码格式"""
+    if not symbol or not isinstance(symbol, str):
+        raise BacktestValidationError('股票代码不能为空')
+    # A股代码格式：6位数字
+    if not re.match(r'^[0-9]{6}$', symbol):
+        raise BacktestValidationError(f'无效的股票代码格式: {symbol}')
+    return symbol
+
+
+def validate_date_range(start_date, end_date):
+    """验证日期范围"""
+    if not start_date or not end_date:
+        raise BacktestValidationError('开始日期和结束日期不能为空')
+    if isinstance(start_date, str):
+        start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+    if isinstance(end_date, str):
+        end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+    if start_date >= end_date:
+        raise BacktestValidationError('开始日期必须早于结束日期')
+    if end_date > date.today():
+        raise BacktestValidationError('结束日期不能晚于今天')
+    return start_date, end_date
+
+
+def validate_initial_capital(capital):
+    """验证初始资金"""
+    if capital is None or capital <= 0:
+        raise BacktestValidationError('初始资金必须大于0')
+    if capital < 1000:
+        raise BacktestValidationError('初始资金不能少于1000元')
+    if capital > 1e12:  # 1万亿
+        raise BacktestValidationError('初始资金超出合理范围')
+    return capital
 
 
 class PandasDataWithPrevClose(bt.feeds.PandasData):
@@ -166,12 +208,17 @@ class BacktestService:
     """回测服务类"""
 
     def __init__(self, strategy_id, initial_capital=100000):
-        self.strategy_obj = Strategy.objects.get(id=strategy_id)
+        validate_initial_capital(initial_capital)
+        self.strategy_obj = QuantStrategy.objects.get(id=strategy_id)
         self.initial_capital = Decimal(str(initial_capital))
         self.cerebro = bt.Cerebro()
 
     def load_data(self, symbol, start_date, end_date):
         """从 StockData 加载数据（含前收盘价用于涨跌停判断）"""
+        # 验证输入
+        symbol = validate_symbol(symbol)
+        start_date, end_date = validate_date_range(start_date, end_date)
+
         qs = StockData.objects.filter(
             symbol=symbol,
             date__gte=start_date,
@@ -179,21 +226,39 @@ class BacktestService:
         ).order_by('date').values('date', 'open', 'high', 'low', 'close', 'volume')
 
         if not qs.exists():
-            raise ValueError(f'{symbol} 在指定日期范围内无数据')
+            raise BacktestValidationError(f'{symbol} 在指定日期范围内无数据')
 
         data = []
         prev_close = None
+        invalid_rows = []
         for row in qs:
+            # 验证 OHLCV 数据有效性
+            ohlcv = [row['open'], row['high'], row['low'], row['close'], row['volume']]
+            if any(v is None or v <= 0 for v in ohlcv[:4]):  # OHLC 必须为正
+                invalid_rows.append(row['date'])
+                continue
+            if row['high'] < row['low']:
+                invalid_rows.append(row['date'])
+                continue
+
             data.append({
                 'datetime': datetime.combine(row['date'], datetime.min.time()),
                 'open': float(row['open']),
                 'high': float(row['high']),
                 'low': float(row['low']),
                 'close': float(row['close']),
-                'volume': float(row['volume']),
+                'volume': float(row['volume']) if row['volume'] else 0,
                 'prev_close': prev_close if prev_close else float(row['close']),
             })
             prev_close = float(row['close'])
+
+        if invalid_rows:
+            # 记录警告但不中断（跳过无效数据）
+            import logging
+            logging.warning(f'{symbol} 有 {len(invalid_rows)} 条无效数据被跳过')
+
+        if len(data) < 20:  # 至少需要20个交易日数据
+            raise BacktestValidationError(f'{symbol} 有效数据不足，至少需要20个交易日')
 
         df = pd.DataFrame(data)
         df.set_index('datetime', inplace=True)

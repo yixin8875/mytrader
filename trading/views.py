@@ -12,7 +12,7 @@ import logging
 from .models import Account, TradeLog, DailyReport, Position, Strategy, Notification, PriceAlert, Symbol, TradeTag, UserPreference, RiskRule, RiskSnapshot
 from .analytics import TradeAnalytics
 from .notifications import NotificationService
-from .utils import api_login_required, parse_date, parse_date_range, check_webhook_rate_limit
+from .utils import api_login_required, parse_date, parse_date_range, check_webhook_rate_limit, verify_webhook_signature
 
 logger = logging.getLogger(__name__)
 
@@ -454,7 +454,7 @@ def api_notifications(request):
         return JsonResponse({'error': '未登录'}, status=401)
 
     service = NotificationService(request.user)
-    limit = int(request.GET.get('limit', 50))
+    limit = min(int(request.GET.get('limit', 50)), 100)  # 最大100条
     include_read = request.GET.get('include_read', 'true').lower() == 'true'
     notification_type = request.GET.get('type')
 
@@ -1007,7 +1007,8 @@ def api_tag_analysis(request):
     # 按胜率排序
     result.sort(key=lambda x: x['win_rate'], reverse=True)
 
-    return JsonResponse({'tags': result})
+    # 限制返回数量（最多50个标签）
+    return JsonResponse({'tags': result[:50]})
 
 
 @login_required
@@ -1083,7 +1084,7 @@ def api_drawdown_analysis(request):
     account_id = request.GET.get('account_id')
 
     # 获取日报数据计算回撤
-    reports = DailyReport.objects.filter(account__owner=request.user).order_by('date')
+    reports = DailyReport.objects.filter(account__owner=request.user).order_by('report_date')
     if account_id:
         reports = reports.filter(account_id=account_id)
 
@@ -1102,12 +1103,12 @@ def api_drawdown_analysis(request):
         balance = float(report.ending_balance)
         if balance > peak:
             peak = balance
-            dd_start = report.date
+            dd_start = report.report_date
 
         if peak > 0:
             dd = (peak - balance) / peak * 100
             drawdowns.append({
-                'date': report.date.strftime('%Y-%m-%d'),
+                'date': report.report_date.strftime('%Y-%m-%d'),
                 'drawdown': round(dd, 2),
                 'balance': balance,
                 'peak': peak,
@@ -1116,7 +1117,7 @@ def api_drawdown_analysis(request):
             if dd > max_dd:
                 max_dd = dd
                 max_dd_start = dd_start
-                max_dd_end = report.date
+                max_dd_end = report.report_date
 
     # 获取最大回撤期间的交易
     problem_trades = []
@@ -1556,13 +1557,21 @@ def data_management_page(request):
 @require_http_methods(['POST'])
 def api_backup_database(request):
     """数据库备份 API"""
-    import subprocess
     import os
+    from io import StringIO
     from django.conf import settings
+    from django.core.management import call_command
 
     try:
         data = json.loads(request.body)
-        backup_type = data.get('type', 'full')  # full, trading, quant
+        backup_type = data.get('type', 'full')
+
+        # 白名单验证备份类型
+        allowed_types = {'full': ['trading', 'quant'], 'trading': ['trading'], 'quant': ['quant']}
+        if backup_type not in allowed_types:
+            return JsonResponse({'error': '无效的备份类型'}, status=400)
+
+        apps = allowed_types[backup_type]
 
         backup_dir = os.path.join(settings.BASE_DIR, 'backups')
         os.makedirs(backup_dir, exist_ok=True)
@@ -1571,21 +1580,9 @@ def api_backup_database(request):
         filename = f'backup_{backup_type}_{timestamp}.json'
         filepath = os.path.join(backup_dir, filename)
 
-        # 根据类型选择要备份的app
-        apps = []
-        if backup_type == 'full':
-            apps = ['trading', 'quant']
-        elif backup_type == 'trading':
-            apps = ['trading']
-        elif backup_type == 'quant':
-            apps = ['quant']
-
-        # 使用Django dumpdata
-        cmd = ['.venv/bin/python', 'manage.py', 'dumpdata'] + apps + ['--indent', '2', '-o', filepath]
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=settings.BASE_DIR)
-
-        if result.returncode != 0:
-            return JsonResponse({'error': f'备份失败: {result.stderr}'}, status=500)
+        # 使用 Django call_command 代替 subprocess（更安全）
+        output = StringIO()
+        call_command('dumpdata', *apps, indent=2, output=filepath, stdout=output)
 
         file_size = os.path.getsize(filepath)
         return JsonResponse({
@@ -1604,9 +1601,12 @@ def api_backup_database(request):
 @require_http_methods(['POST'])
 def api_restore_database(request):
     """数据库恢复 API"""
-    import subprocess
     import os
+    import re
+    import uuid
+    from io import StringIO
     from django.conf import settings
+    from django.core.management import call_command
 
     try:
         if 'file' not in request.FILES:
@@ -1616,24 +1616,24 @@ def api_restore_database(request):
         if not uploaded_file.name.endswith('.json'):
             return JsonResponse({'error': '仅支持JSON格式的备份文件'}, status=400)
 
-        # 保存上传的文件
+        # 使用安全的文件名（UUID）避免路径遍历攻击
         backup_dir = os.path.join(settings.BASE_DIR, 'backups')
         os.makedirs(backup_dir, exist_ok=True)
-        filepath = os.path.join(backup_dir, f'restore_{uploaded_file.name}')
+        safe_filename = f'restore_{uuid.uuid4().hex}.json'
+        filepath = os.path.join(backup_dir, safe_filename)
 
         with open(filepath, 'wb+') as f:
             for chunk in uploaded_file.chunks():
                 f.write(chunk)
 
-        # 使用Django loaddata
-        cmd = ['.venv/bin/python', 'manage.py', 'loaddata', filepath]
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=settings.BASE_DIR)
-
-        # 清理临时文件
-        os.remove(filepath)
-
-        if result.returncode != 0:
-            return JsonResponse({'error': f'恢复失败: {result.stderr}'}, status=500)
+        try:
+            # 使用 Django call_command 代替 subprocess（更安全）
+            output = StringIO()
+            call_command('loaddata', filepath, stdout=output)
+        finally:
+            # 确保清理临时文件
+            if os.path.exists(filepath):
+                os.remove(filepath)
 
         return JsonResponse({
             'status': 'success',
@@ -1919,7 +1919,7 @@ def api_webhooks(request):
     """Webhook列表 API"""
     from .models import Webhook
 
-    webhooks = Webhook.objects.filter(owner=request.user)
+    webhooks = Webhook.objects.filter(owner=request.user)[:50]
     result = [{
         'id': w.id,
         'name': w.name,
@@ -1985,6 +1985,15 @@ def api_webhook_receive(request, secret_key):
         webhook = Webhook.objects.get(secret_key=secret_key, webhook_type='inbound', status='active')
     except Webhook.DoesNotExist:
         return JsonResponse({'error': 'Invalid webhook'}, status=404)
+
+    # 签名验证（如果提供了签名头）
+    valid, error_msg = verify_webhook_signature(request, secret_key)
+    if not valid:
+        WebhookLog.objects.create(
+            webhook=webhook, direction='in', payload={},
+            success=False, error_message=f'签名验证失败: {error_msg}'
+        )
+        return JsonResponse({'error': error_msg}, status=401)
 
     # 速率限制检查
     allowed, remaining, reset_time = check_webhook_rate_limit(secret_key)
@@ -2056,7 +2065,7 @@ def api_scheduled_reports(request):
     """定时报告列表 API"""
     from .models import ScheduledReport
 
-    reports = ScheduledReport.objects.filter(owner=request.user)
+    reports = ScheduledReport.objects.filter(owner=request.user)[:50]
     result = [{
         'id': r.id,
         'name': r.name,

@@ -5,4 +5,5 @@ description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
     "django>=5.2.10",
+    "pandas-stubs==2.3.3.251219",
 ]

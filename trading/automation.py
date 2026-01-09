@@ -190,18 +190,31 @@ class ReportGenerator:
         aggregated = daily_reports.aggregate(
             total_pnl=Sum('profit_loss'),
             total_deposit=Sum('net_deposit'),
-            total_trades=Sum('trade_count'),
-            total_wins=Sum('win_count'),
             max_dd=Avg('max_drawdown')  # 简化处理
         )
 
         profit_loss = aggregated['total_pnl'] or Decimal('0')
         net_deposit = aggregated['total_deposit'] or Decimal('0')
-        trade_count = aggregated['total_trades'] or 0
-        total_wins = aggregated['total_wins'] or 0
+
+        # 直接从交易记录计算月度胜率（更准确）
+        from datetime import date
+        month_start = date(year, month, 1)
+        if month == 12:
+            month_end = date(year + 1, 1, 1)
+        else:
+            month_end = date(year, month + 1, 1)
+
+        month_trades = self.TradeLog.objects.filter(
+            account=account,
+            status='filled',
+            trade_time__date__gte=month_start,
+            trade_time__date__lt=month_end
+        )
+        trade_count = month_trades.count()
+        win_count = month_trades.filter(profit_loss__gt=0).count()
 
         # 胜率和盈亏比例
-        win_rate = Decimal(total_wins / trade_count * 100) if trade_count > 0 else Decimal('0')
+        win_rate = Decimal(win_count / trade_count * 100) if trade_count > 0 else Decimal('0')
         profit_loss_ratio = Decimal('0')
         if starting_balance > 0:
             profit_loss_ratio = (profit_loss / starting_balance) * 100
@@ -385,10 +398,13 @@ class RiskMonitor:
         return None
 
     def _get_threshold(self, rule, account):
-        """获取规则阈值"""
+        """获取规则阈值
+        使用 initial_balance 作为计算基准，避免账户亏损时阈值变小
+        """
         if rule.threshold_percent and rule.rule_type in ['daily_loss_limit', 'single_trade_loss', 'max_drawdown']:
-            # 按百分比计算阈值
-            return account.current_balance * rule.threshold_percent / 100
+            # 按百分比计算阈值，使用初始余额作为基准
+            base_balance = account.initial_balance if account.initial_balance > 0 else account.current_balance
+            return base_balance * rule.threshold_percent / 100
         return rule.threshold_value
 
     def _generate_alert_message(self, rule, current_value, threshold):

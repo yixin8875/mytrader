@@ -1,6 +1,8 @@
-from django.db import models
+from django.db import models, transaction
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.core.validators import MinValueValidator
+from decimal import Decimal
 import decimal
 
 
@@ -91,6 +93,30 @@ class AccountTransaction(models.Model):
 
     def __str__(self):
         return f"{self.account.name} - {self.get_transaction_type_display()}: {self.amount}"
+
+    def save(self, *args, **kwargs):
+        # 自动设置变动前余额
+        if not self.pk and not self.balance_before:
+            self.balance_before = self.account.current_balance
+
+        # 自动计算变动后余额
+        if not self.pk and not self.balance_after:
+            self.balance_after = self.balance_before + self.amount
+
+        is_new = self.pk is None
+
+        # 使用事务确保数据一致性
+        with transaction.atomic():
+            # 锁定账户记录防止并发问题
+            if is_new:
+                Account.objects.select_for_update().get(pk=self.account_id)
+
+            super().save(*args, **kwargs)
+
+            # 新建流水时自动更新账户余额
+            if is_new:
+                self.account.current_balance = self.balance_after
+                self.account.save(update_fields=['current_balance'])
 
 
 class Symbol(models.Model):
@@ -253,12 +279,25 @@ class TradeLog(models.Model):
         ('rejected', '已拒绝'),
     ]
 
+    TRADE_TYPE_CHOICES = [
+        ('open', '开仓'),
+        ('close', '平仓'),
+        ('add', '加仓'),
+        ('reduce', '减仓'),
+    ]
+
     account = models.ForeignKey(Account, on_delete=models.CASCADE, verbose_name='账户', related_name='trade_logs')
     strategy = models.ForeignKey(Strategy, on_delete=models.SET_NULL, null=True, blank=True,
                                 verbose_name='策略', related_name='trade_logs')
     symbol = models.ForeignKey(Symbol, on_delete=models.PROTECT, verbose_name='交易标的', related_name='trade_logs')
     side = models.CharField('方向', max_length=10, choices=SIDE_CHOICES)
-    quantity = models.DecimalField('数量', max_digits=15, decimal_places=4)
+    trade_type = models.CharField('交易类型', max_length=10, choices=TRADE_TYPE_CHOICES, default='open',
+                                  help_text='开仓/平仓/加仓/减仓')
+    opening_trade = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
+                                      verbose_name='关联开仓', related_name='closing_trades',
+                                      help_text='平仓时关联的开仓交易')
+    quantity = models.DecimalField('数量', max_digits=15, decimal_places=4,
+                                    validators=[MinValueValidator(Decimal('0.0001'))])
     price = models.DecimalField('价格', max_digits=15, decimal_places=4)
     executed_price = models.DecimalField('成交价', max_digits=15, decimal_places=4,
                                         null=True, blank=True)
@@ -292,24 +331,166 @@ class TradeLog(models.Model):
 
     @property
     def total_amount(self):
-        """交易总金额"""
+        """交易总金额（含合约乘数）"""
         if self.quantity is not None and self.price is not None:
-            return self.quantity * self.price
+            contract_size = self.symbol.contract_size if self.symbol else 1
+            return self.quantity * self.price * contract_size
         return 0
+
+    def calculate_profit_loss(self):
+        """计算平仓盈亏（仅对平仓交易有效）
+
+        做多：买入开仓 → 卖出平仓，盈亏 = (卖出价 - 买入价) * 数量
+        做空：卖出开仓 → 买入平仓，盈亏 = (卖出价 - 买入价) * 数量
+        """
+        if self.trade_type not in ('close', 'reduce') or not self.opening_trade:
+            return Decimal('0')
+
+        entry_price = self.opening_trade.executed_price or self.opening_trade.price
+        exit_price = self.executed_price or self.price
+        contract_size = self.symbol.contract_size if self.symbol else 1
+
+        # 根据开仓方向判断
+        if self.opening_trade.side == 'buy':  # 平多仓（开仓是买入）
+            pnl = (exit_price - entry_price) * self.quantity * contract_size
+        else:  # 平空仓（开仓是卖出）
+            pnl = (entry_price - exit_price) * self.quantity * contract_size
+
+        return pnl - self.commission
 
     def save(self, *args, **kwargs):
         # 自动计算持仓时间
         if self.open_time and self.close_time:
             delta = self.close_time - self.open_time
             self.holding_minutes = int(delta.total_seconds() / 60)
+
+        # 平仓时自动计算盈亏
+        if self.trade_type in ('close', 'reduce') and self.opening_trade and self.profit_loss == 0:
+            self.profit_loss = self.calculate_profit_loss()
+
+        # 检查是否是新创建且状态为已成交
+        is_new = self.pk is None
+        old_status = None
+        if not is_new:
+            old_obj = TradeLog.objects.filter(pk=self.pk).first()
+            old_status = old_obj.status if old_obj else None
+
         super().save(*args, **kwargs)
+
+        # 状态变为已成交时，更新账户余额和持仓
+        if self.status == 'filled' and (is_new or old_status != 'filled'):
+            self._update_account_and_position()
+
+    def _update_account_and_position(self):
+        """更新账户余额和持仓
+
+        支持做空：
+        - 做多开仓(buy+open)：持仓增加（正数）
+        - 做多平仓(sell+close)：持仓减少
+        - 做空开仓(sell+open)：持仓减少（负数表示空头）
+        - 做空平仓(buy+close)：持仓增加（向0靠近）
+        """
+        from decimal import Decimal
+
+        # 使用事务和行锁确保数据一致性
+        with transaction.atomic():
+            # 锁定账户记录
+            account = Account.objects.select_for_update().get(pk=self.account_id)
+
+            # 更新账户余额（已实现盈亏）
+            if self.profit_loss != 0:
+                account.current_balance += self.profit_loss
+                account.save(update_fields=['current_balance'])
+
+            # 获取或创建持仓（带锁）
+            try:
+                position = Position.objects.select_for_update().get(
+                    account=self.account,
+                    symbol=self.symbol
+                )
+            except Position.DoesNotExist:
+                position = Position.objects.create(
+                    account=self.account,
+                    symbol=self.symbol,
+                    quantity=Decimal('0'),
+                    avg_price=Decimal('0')
+                )
+
+            exec_price = self.executed_price or self.price
+
+            # 根据交易类型和方向更新持仓
+            if self.trade_type in ('open', 'add'):
+                # 开仓/加仓
+                if self.side == 'buy':
+                    # 做多开仓：增加正数持仓
+                    if position.quantity >= 0:
+                        # 加权平均成本
+                        total_cost = position.quantity * position.avg_price + self.quantity * exec_price
+                        position.quantity += self.quantity
+                        position.avg_price = total_cost / position.quantity if position.quantity > 0 else exec_price
+                    else:
+                        # 有空头持仓时买入，先平空再开多
+                        position.quantity += self.quantity
+                        if position.quantity > 0:
+                            position.avg_price = exec_price
+                else:
+                    # 做空开仓：增加负数持仓
+                    if position.quantity <= 0:
+                        total_cost = abs(position.quantity) * position.avg_price + self.quantity * exec_price
+                        position.quantity -= self.quantity
+                        position.avg_price = total_cost / abs(position.quantity) if position.quantity != 0 else exec_price
+                    else:
+                        # 有多头持仓时卖出，先平多再开空
+                        position.quantity -= self.quantity
+                        if position.quantity < 0:
+                            position.avg_price = exec_price
+            else:
+                # 平仓/减仓
+                if self.side == 'sell':
+                    # 卖出平仓（平多）
+                    position.quantity -= self.quantity
+                else:
+                    # 买入平仓（平空）
+                    position.quantity += self.quantity
+
+            # 持仓为0时重置成本
+            if position.quantity == 0:
+                position.avg_price = Decimal('0')
+
+            # 更新市值和浮动盈亏（支持空头）
+            if position.current_price and position.quantity != 0:
+                contract_size = self.symbol.contract_size if self.symbol else 1
+                position.market_value = abs(position.quantity) * position.current_price * contract_size
+
+                if position.quantity > 0:  # 多头
+                    position.profit_loss = (position.current_price - position.avg_price) * position.quantity * contract_size
+                else:  # 空头
+                    position.profit_loss = (position.avg_price - position.current_price) * abs(position.quantity) * contract_size
+
+                if position.avg_price > 0:
+                    if position.quantity > 0:
+                        position.profit_loss_ratio = (position.current_price - position.avg_price) / position.avg_price * 100
+                    else:
+                        position.profit_loss_ratio = (position.avg_price - position.current_price) / position.avg_price * 100
+            else:
+                position.market_value = Decimal('0')
+                position.profit_loss = Decimal('0')
+                position.profit_loss_ratio = Decimal('0')
+
+            position.save()
 
 
 class Position(models.Model):
-    """持仓模型"""
+    """持仓模型
+
+    quantity > 0: 多头持仓
+    quantity < 0: 空头持仓
+    quantity = 0: 无持仓
+    """
     account = models.ForeignKey(Account, on_delete=models.CASCADE, verbose_name='账户', related_name='positions')
     symbol = models.ForeignKey(Symbol, on_delete=models.PROTECT, verbose_name='交易标的', related_name='positions')
-    quantity = models.DecimalField('持仓数量', max_digits=15, decimal_places=4)
+    quantity = models.DecimalField('持仓数量', max_digits=15, decimal_places=4,
+                                   help_text='正数为多头，负数为空头')
     avg_price = models.DecimalField('平均成本', max_digits=15, decimal_places=4)
     current_price = models.DecimalField('当前价格', max_digits=15, decimal_places=4, null=True, blank=True)
     market_value = models.DecimalField('市值', max_digits=15, decimal_places=2, default=0)
@@ -324,7 +505,27 @@ class Position(models.Model):
         ordering = ['-market_value']
 
     def __str__(self):
-        return f"{self.account.name} - {self.symbol.code}: {self.quantity}"
+        direction = '多' if self.quantity > 0 else '空' if self.quantity < 0 else '无'
+        return f"{self.account.name} - {self.symbol.code}: {direction} {abs(self.quantity)}"
+
+    @property
+    def direction(self):
+        """持仓方向"""
+        if self.quantity > 0:
+            return 'long'
+        elif self.quantity < 0:
+            return 'short'
+        return 'none'
+
+    @property
+    def direction_display(self):
+        """持仓方向显示"""
+        return {'long': '多头', 'short': '空头', 'none': '无持仓'}.get(self.direction, '未知')
+
+    @property
+    def abs_quantity(self):
+        """持仓数量绝对值"""
+        return abs(self.quantity)
 
 
 class DailyReport(models.Model):
