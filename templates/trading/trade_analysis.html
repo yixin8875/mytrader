@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交易分析深化 - MyTrader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .tab-btn.active { background-color: #10B981; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- 顶部导航 -->
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <a href="{% url 'home' %}" class="text-gray-600 hover:text-emerald-600">
+                    <i class="fas fa-arrow-left mr-2"></i>返回首页
+                </a>
+                <h1 class="text-xl font-bold text-gray-800">交易分析深化</h1>
+            </div>
+            <div>
+                <select id="account-filter" class="border rounded-lg px-4 py-2" onchange="refreshAll()">
+                    <option value="">全部账户</option>
+                    {% for account in accounts %}
+                    <option value="{{ account.id }}">{{ account.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Tab 切换 -->
+        <div class="bg-white rounded-lg shadow-sm mb-6">
+            <div class="flex border-b">
+                <button class="tab-btn active px-6 py-3 font-medium rounded-tl-lg" data-tab="tags">
+                    <i class="fas fa-tags mr-2"></i>标签分析
+                </button>
+                <button class="tab-btn px-6 py-3 font-medium" data-tab="holding">
+                    <i class="fas fa-clock mr-2"></i>持仓时间
+                </button>
+                <button class="tab-btn px-6 py-3 font-medium" data-tab="drawdown">
+                    <i class="fas fa-chart-line mr-2"></i>回撤分析
+                </button>
+                <button class="tab-btn px-6 py-3 font-medium rounded-tr-lg" data-tab="correlation">
+                    <i class="fas fa-project-diagram mr-2"></i>相关性分析
+                </button>
+            </div>
+        </div>
+
+        <!-- 标签分析 Tab -->
+        <div id="tags-tab" class="tab-content active">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-medium mb-4">标签胜率排行</h3>
+                    <div id="tag-chart" style="height: 400px;"></div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-medium mb-4">标签详细统计</h3>
+                    <div id="tag-table" class="overflow-x-auto">
+                        <p class="text-gray-500 text-center py-8">加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 持仓时间 Tab -->
+        <div id="holding-tab" class="tab-content">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-sm text-gray-500 mb-1">最佳持仓周期</h3>
+                    <p id="best-period" class="text-2xl font-bold text-emerald-600">-</p>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-6 lg:col-span-2">
+                    <h3 class="text-sm text-gray-500 mb-1">建议</h3>
+                    <p id="holding-advice" class="text-gray-700">根据历史数据分析您的最佳持仓周期</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-medium mb-4">持仓时间 vs 胜率</h3>
+                    <div id="holding-chart" style="height: 350px;"></div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-medium mb-4">持仓时间分布</h3>
+                    <div id="holding-scatter" style="height: 350px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 回撤分析 Tab -->
+        <div id="drawdown-tab" class="tab-content">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-sm text-gray-500 mb-1">最大回撤</h3>
+                    <p id="max-drawdown" class="text-2xl font-bold text-red-500">-</p>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-sm text-gray-500 mb-1">回撤开始</h3>
+                    <p id="dd-start" class="text-xl font-medium text-gray-700">-</p>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-sm text-gray-500 mb-1">回撤结束</h3>
+                    <p id="dd-end" class="text-xl font-medium text-gray-700">-</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-medium mb-4">回撤曲线</h3>
+                    <div id="drawdown-chart" style="height: 350px;"></div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-medium mb-4">问题交易（最大回撤期间）</h3>
+                    <div id="problem-trades" class="overflow-x-auto">
+                        <p class="text-gray-500 text-center py-8">加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 相关性分析 Tab -->
+        <div id="correlation-tab" class="tab-content">
+            <div id="correlation-warnings" class="mb-6"></div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-medium mb-4">资产类型分布</h3>
+                    <div id="type-chart" style="height: 350px;"></div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-medium mb-4">标的集中度</h3>
+                    <div id="symbol-chart" style="height: 350px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab 切换
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab + '-tab').classList.add('active');
+            });
+        });
+
+        let tagChart, holdingChart, holdingScatter, drawdownChart, typeChart, symbolChart;
+
+        function getAccountId() {
+            return document.getElementById('account-filter').value;
+        }
+
+        function refreshAll() {
+            loadTagAnalysis();
+            loadHoldingAnalysis();
+            loadDrawdownAnalysis();
+            loadCorrelationAnalysis();
+        }
+
+        // 标签分析
+        function loadTagAnalysis() {
+            fetch(`/api/analysis/tags/?account_id=${getAccountId()}`)
+                .then(res => res.json())
+                .then(data => {
+                    renderTagChart(data.tags);
+                    renderTagTable(data.tags);
+                });
+        }
+
+        function renderTagChart(tags) {
+            if (!tagChart) {
+                tagChart = echarts.init(document.getElementById('tag-chart'));
+            }
+            const option = {
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                xAxis: { type: 'value', max: 100, name: '胜率 %' },
+                yAxis: { type: 'category', data: tags.map(t => t.name) },
+                series: [{
+                    type: 'bar',
+                    data: tags.map(t => ({
+                        value: t.win_rate,
+                        itemStyle: { color: t.color }
+                    })),
+                    label: { show: true, position: 'right', formatter: '{c}%' }
+                }]
+            };
+            tagChart.setOption(option);
+        }
+
+        function renderTagTable(tags) {
+            if (tags.length === 0) {
+                document.getElementById('tag-table').innerHTML = '<p class="text-gray-500 text-center py-8">暂无标签数据，请先给交易添加标签</p>';
+                return;
+            }
+            let html = `<table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">标签</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">交易数</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">胜率</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">总盈亏</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">盈亏比</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">`;
+            tags.forEach(t => {
+                const pnlClass = t.total_pnl >= 0 ? 'text-green-600' : 'text-red-600';
+                html += `<tr>
+                    <td class="px-3 py-2"><span style="background:${t.color};color:white;padding:2px 8px;border-radius:3px;font-size:12px;">${t.name}</span></td>
+                    <td class="px-3 py-2 text-right text-sm">${t.total_trades}</td>
+                    <td class="px-3 py-2 text-right text-sm">${t.win_rate}%</td>
+                    <td class="px-3 py-2 text-right text-sm ${pnlClass}">${t.total_pnl.toFixed(2)}</td>
+                    <td class="px-3 py-2 text-right text-sm">${t.profit_factor || '-'}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('tag-table').innerHTML = html;
+        }
+
+        // 持仓时间分析
+        function loadHoldingAnalysis() {
+            fetch(`/api/analysis/holding/?account_id=${getAccountId()}`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('best-period').textContent = data.best_period || '-';
+                    if (data.best_period) {
+                        document.getElementById('holding-advice').textContent =
+                            `根据历史数据，您在 ${data.best_period} 的持仓周期内胜率最高，建议优化交易策略向此周期靠拢。`;
+                    }
+                    renderHoldingChart(data.periods);
+                    renderHoldingScatter(data.distribution);
+                });
+        }
+
+        function renderHoldingChart(periods) {
+            if (!holdingChart) {
+                holdingChart = echarts.init(document.getElementById('holding-chart'));
+            }
+            const option = {
+                tooltip: { trigger: 'axis' },
+                xAxis: { type: 'category', data: periods.map(p => p.period), axisLabel: { rotate: 30 } },
+                yAxis: [
+                    { type: 'value', name: '胜率 %', max: 100 },
+                    { type: 'value', name: '交易数', position: 'right' }
+                ],
+                series: [
+                    { name: '胜率', type: 'bar', data: periods.map(p => p.win_rate), itemStyle: { color: '#10B981' } },
+                    { name: '交易数', type: 'line', yAxisIndex: 1, data: periods.map(p => p.total_trades), itemStyle: { color: '#3B82F6' } }
+                ]
+            };
+            holdingChart.setOption(option);
+        }
+
+        function renderHoldingScatter(distribution) {
+            if (!holdingScatter) {
+                holdingScatter = echarts.init(document.getElementById('holding-scatter'));
+            }
+            const option = {
+                tooltip: { formatter: p => `持仓: ${p.value[0]}分钟<br/>盈亏: ${p.value[1].toFixed(2)}` },
+                xAxis: { type: 'value', name: '持仓时间(分钟)', scale: true },
+                yAxis: { type: 'value', name: '盈亏' },
+                series: [{
+                    type: 'scatter',
+                    data: distribution.map(d => [d.minutes, d.pnl]),
+                    itemStyle: { color: d => d.value[1] >= 0 ? '#10B981' : '#EF4444' }
+                }]
+            };
+            holdingScatter.setOption(option);
+        }
+
+        // 回撤分析
+        function loadDrawdownAnalysis() {
+            fetch(`/api/analysis/drawdown/?account_id=${getAccountId()}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.max_drawdown) {
+                        document.getElementById('max-drawdown').textContent = data.max_drawdown.value + '%';
+                        document.getElementById('dd-start').textContent = data.max_drawdown.start_date || '-';
+                        document.getElementById('dd-end').textContent = data.max_drawdown.end_date || '-';
+                    }
+                    renderDrawdownChart(data.drawdowns);
+                    renderProblemTrades(data.problem_trades);
+                });
+        }
+
+        function renderDrawdownChart(drawdowns) {
+            if (!drawdownChart) {
+                drawdownChart = echarts.init(document.getElementById('drawdown-chart'));
+            }
+            const option = {
+                tooltip: { trigger: 'axis' },
+                xAxis: { type: 'category', data: drawdowns.map(d => d.date) },
+                yAxis: { type: 'value', name: '回撤 %', inverse: true },
+                series: [{
+                    type: 'line',
+                    data: drawdowns.map(d => d.drawdown),
+                    areaStyle: { color: 'rgba(239, 68, 68, 0.3)' },
+                    lineStyle: { color: '#EF4444' },
+                    itemStyle: { color: '#EF4444' }
+                }]
+            };
+            drawdownChart.setOption(option);
+        }
+
+        function renderProblemTrades(trades) {
+            if (trades.length === 0) {
+                document.getElementById('problem-trades').innerHTML = '<p class="text-gray-500 text-center py-8">暂无数据</p>';
+                return;
+            }
+            let html = `<table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">日期</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">标的</th>
+                        <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">盈亏</th>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">标签</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">`;
+            trades.forEach(t => {
+                const tags = t.tags.map(tag => `<span class="bg-gray-200 px-2 py-0.5 rounded text-xs">${tag}</span>`).join(' ');
+                html += `<tr>
+                    <td class="px-3 py-2 text-sm">${t.date}</td>
+                    <td class="px-3 py-2 text-sm font-medium">${t.symbol}</td>
+                    <td class="px-3 py-2 text-sm text-right text-red-600">${t.profit_loss.toFixed(2)}</td>
+                    <td class="px-3 py-2 text-sm">${tags || '-'}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('problem-trades').innerHTML = html;
+        }
+
+        // 相关性分析
+        function loadCorrelationAnalysis() {
+            fetch(`/api/analysis/correlation/?account_id=${getAccountId()}`)
+                .then(res => res.json())
+                .then(data => {
+                    renderWarnings(data.warnings);
+                    renderTypeChart(data.type_concentration);
+                    renderSymbolChart(data.symbol_concentration);
+                });
+        }
+
+        function renderWarnings(warnings) {
+            if (warnings.length === 0) {
+                document.getElementById('correlation-warnings').innerHTML = '';
+                return;
+            }
+            let html = '<div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">';
+            html += '<div class="flex"><div class="flex-shrink-0"><i class="fas fa-exclamation-triangle text-yellow-400"></i></div>';
+            html += '<div class="ml-3"><h3 class="text-sm font-medium text-yellow-800">风险提示</h3>';
+            html += '<div class="mt-2 text-sm text-yellow-700"><ul class="list-disc pl-5 space-y-1">';
+            warnings.forEach(w => html += `<li>${w}</li>`);
+            html += '</ul></div></div></div></div>';
+            document.getElementById('correlation-warnings').innerHTML = html;
+        }
+
+        function renderTypeChart(concentration) {
+            if (!typeChart) {
+                typeChart = echarts.init(document.getElementById('type-chart'));
+            }
+            const option = {
+                tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                series: [{
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    data: concentration.map(c => ({ name: c.type, value: c.value })),
+                    label: { formatter: '{b}\n{d}%' }
+                }]
+            };
+            typeChart.setOption(option);
+        }
+
+        function renderSymbolChart(symbols) {
+            if (!symbolChart) {
+                symbolChart = echarts.init(document.getElementById('symbol-chart'));
+            }
+            const option = {
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                xAxis: { type: 'value', max: 100, name: '占比 %' },
+                yAxis: { type: 'category', data: symbols.map(s => s.symbol) },
+                series: [{
+                    type: 'bar',
+                    data: symbols.map(s => s.ratio),
+                    itemStyle: { color: d => d.value > 30 ? '#EF4444' : '#10B981' },
+                    label: { show: true, position: 'right', formatter: '{c}%' }
+                }]
+            };
+            symbolChart.setOption(option);
+        }
+
+        // 窗口大小变化时重绘图表
+        window.addEventListener('resize', () => {
+            tagChart?.resize();
+            holdingChart?.resize();
+            holdingScatter?.resize();
+            drawdownChart?.resize();
+            typeChart?.resize();
+            symbolChart?.resize();
+        });
+
+        // 初始加载
+        refreshAll();
+    </script>
+</body>
+</html>

@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>风控中心 - MyTrader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .risk-card { transition: all 0.3s; }
+        .risk-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .gauge-container { position: relative; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- 顶部导航 -->
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <a href="{% url 'home' %}" class="text-gray-600 hover:text-emerald-600">
+                    <i class="fas fa-arrow-left mr-2"></i>返回首页
+                </a>
+                <h1 class="text-xl font-bold text-gray-800">
+                    <i class="fas fa-shield-alt text-emerald-600 mr-2"></i>风控中心
+                </h1>
+            </div>
+            <div>
+                <select id="account-filter" class="border rounded-lg px-4 py-2" onchange="refreshAll()">
+                    <option value="">全部账户</option>
+                    {% for account in accounts %}
+                    <option value="{{ account.id }}">{{ account.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- 风险概览卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div class="risk-card bg-white rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">总资产</p>
+                        <p id="total-balance" class="text-2xl font-bold text-gray-800">¥0</p>
+                    </div>
+                    <div class="bg-blue-100 p-3 rounded-full">
+                        <i class="fas fa-wallet text-blue-600"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="risk-card bg-white rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">风险敞口</p>
+                        <p id="exposure-ratio" class="text-2xl font-bold text-orange-600">0%</p>
+                    </div>
+                    <div class="bg-orange-100 p-3 rounded-full">
+                        <i class="fas fa-chart-pie text-orange-600"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="risk-card bg-white rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">当前回撤</p>
+                        <p id="current-drawdown" class="text-2xl font-bold text-red-500">0%</p>
+                    </div>
+                    <div class="bg-red-100 p-3 rounded-full">
+                        <i class="fas fa-arrow-down text-red-500"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="risk-card bg-white rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">风险评分</p>
+                        <p id="risk-score" class="text-2xl font-bold">-</p>
+                    </div>
+                    <div id="risk-score-icon" class="bg-green-100 p-3 rounded-full">
+                        <i class="fas fa-heartbeat text-green-600"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <!-- 仓位计算器 -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h3 class="text-lg font-medium mb-4 flex items-center">
+                    <i class="fas fa-calculator text-emerald-600 mr-2"></i>仓位计算器
+                </h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">账户资金</label>
+                        <input type="number" id="calc-balance" placeholder="100000" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">风险比例 (%)</label>
+                        <input type="number" id="calc-risk" value="2" step="0.5" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">标的（可选）</label>
+                        <select id="calc-symbol" class="w-full px-3 py-2 border rounded-lg">
+                            <option value="">股票/现货</option>
+                            {% for symbol in symbols %}
+                            <option value="{{ symbol.id }}">{{ symbol.code }} - {{ symbol.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">入场价</label>
+                            <input type="number" id="calc-entry" step="0.01" class="w-full px-3 py-2 border rounded-lg">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">止损价</label>
+                            <input type="number" id="calc-stop" step="0.01" class="w-full px-3 py-2 border rounded-lg">
+                        </div>
+                    </div>
+                    <button onclick="calculatePosition()" class="w-full bg-emerald-500 text-white py-2 rounded-lg hover:bg-emerald-600 transition">
+                        <i class="fas fa-calculator mr-2"></i>计算
+                    </button>
+                    <div id="calc-result" class="hidden p-4 bg-gray-50 rounded-lg">
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <p class="text-gray-500">建议仓位</p>
+                                <p id="result-size" class="text-xl font-bold text-emerald-600">0</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-500">最大风险</p>
+                                <p id="result-risk" class="text-lg font-medium text-red-500">¥0</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-500">所需资金</p>
+                                <p id="result-cost" class="text-lg font-medium">¥0</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-500">仓位占比</p>
+                                <p id="result-ratio" class="text-lg font-medium">0%</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 风险敞口 -->
+            <div class="lg:col-span-2 bg-white rounded-lg shadow-sm p-6">
+                <h3 class="text-lg font-medium mb-4 flex items-center">
+                    <i class="fas fa-chart-bar text-blue-600 mr-2"></i>持仓风险敞口
+                </h3>
+                <div id="exposure-chart" style="height: 280px;"></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- 风险规则状态 -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h3 class="text-lg font-medium mb-4 flex items-center">
+                    <i class="fas fa-tasks text-purple-600 mr-2"></i>风险规则监控
+                </h3>
+                <div id="rules-list" class="space-y-3">
+                    <p class="text-gray-500 text-center py-4">加载中...</p>
+                </div>
+            </div>
+
+            <!-- 止损止盈提醒 -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-medium flex items-center">
+                        <i class="fas fa-bell text-yellow-600 mr-2"></i>价格提醒
+                    </h3>
+                    <button onclick="showAlertModal()" class="text-sm bg-emerald-500 text-white px-3 py-1 rounded hover:bg-emerald-600">
+                        <i class="fas fa-plus mr-1"></i>新建
+                    </button>
+                </div>
+                <div id="alerts-list" class="space-y-2 max-h-64 overflow-y-auto">
+                    <p class="text-gray-500 text-center py-4">加载中...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 持仓明细 -->
+        <div class="bg-white rounded-lg shadow-sm p-6">
+            <h3 class="text-lg font-medium mb-4 flex items-center">
+                <i class="fas fa-list text-gray-600 mr-2"></i>持仓明细
+            </h3>
+            <div id="positions-table" class="overflow-x-auto">
+                <p class="text-gray-500 text-center py-4">加载中...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新建提醒弹窗 -->
+    <div id="alert-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 class="text-lg font-medium mb-4">新建价格提醒</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">提醒类型</label>
+                    <select id="alert-type" class="w-full px-3 py-2 border rounded-lg">
+                        <option value="price">普通价格提醒</option>
+                        <option value="stop_loss">止损提醒</option>
+                        <option value="take_profit">止盈提醒</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">标的</label>
+                    <select id="alert-symbol" class="w-full px-3 py-2 border rounded-lg">
+                        {% for symbol in symbols %}
+                        <option value="{{ symbol.id }}">{{ symbol.code }} - {{ symbol.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">条件</label>
+                    <select id="alert-condition" class="w-full px-3 py-2 border rounded-lg">
+                        <option value="above">价格高于</option>
+                        <option value="below">价格低于</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">目标价格</label>
+                    <input type="number" id="alert-price" step="0.01" class="w-full px-3 py-2 border rounded-lg">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">备注</label>
+                    <input type="text" id="alert-notes" placeholder="可选备注" class="w-full px-3 py-2 border rounded-lg">
+                </div>
+                <div class="flex space-x-3">
+                    <button onclick="hideAlertModal()" class="flex-1 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+                    <button onclick="createAlert()" class="flex-1 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600">创建</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let exposureChart;
+
+        function getAccountId() {
+            return document.getElementById('account-filter').value;
+        }
+
+        function refreshAll() {
+            loadRiskExposure();
+            loadRiskRules();
+            loadAlerts();
+        }
+
+        // 仓位计算器
+        function calculatePosition() {
+            const balance = document.getElementById('calc-balance').value;
+            const riskPercent = document.getElementById('calc-risk').value;
+            const entryPrice = document.getElementById('calc-entry').value;
+            const stopLoss = document.getElementById('calc-stop').value;
+            const symbolId = document.getElementById('calc-symbol').value;
+
+            if (!balance || !entryPrice || !stopLoss) {
+                alert('请填写账户资金、入场价和止损价');
+                return;
+            }
+
+            const params = new URLSearchParams({
+                balance, risk_percent: riskPercent, entry_price: entryPrice,
+                stop_loss: stopLoss, symbol_id: symbolId
+            });
+
+            fetch(`/api/risk/calculator/?${params}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+                    document.getElementById('result-size').textContent = data.position_size + ' 手';
+                    document.getElementById('result-risk').textContent = '¥' + data.actual_risk.toLocaleString();
+                    document.getElementById('result-cost').textContent = '¥' + data.total_cost.toLocaleString();
+                    document.getElementById('result-ratio').textContent = data.position_ratio + '%';
+                    document.getElementById('calc-result').classList.remove('hidden');
+                });
+        }
+
+        // 风险敞口
+        function loadRiskExposure() {
+            fetch(`/api/risk/exposure/?account_id=${getAccountId()}`)
+                .then(res => res.json())
+                .then(data => {
+                    updateMetrics(data.metrics);
+                    renderExposureChart(data.positions);
+                    renderPositionsTable(data.positions);
+                });
+        }
+
+        function updateMetrics(metrics) {
+            document.getElementById('total-balance').textContent = '¥' + (metrics.total_balance || 0).toLocaleString();
+            document.getElementById('exposure-ratio').textContent = (metrics.exposure_ratio || 0) + '%';
+            document.getElementById('current-drawdown').textContent = (metrics.current_drawdown || 0) + '%';
+
+            const score = metrics.risk_score || 0;
+            const scoreEl = document.getElementById('risk-score');
+            const iconEl = document.getElementById('risk-score-icon');
+
+            scoreEl.textContent = score + '分';
+            if (score >= 60) {
+                scoreEl.className = 'text-2xl font-bold text-red-500';
+                iconEl.className = 'bg-red-100 p-3 rounded-full';
+                iconEl.innerHTML = '<i class="fas fa-exclamation-triangle text-red-500"></i>';
+            } else if (score >= 40) {
+                scoreEl.className = 'text-2xl font-bold text-yellow-500';
+                iconEl.className = 'bg-yellow-100 p-3 rounded-full';
+                iconEl.innerHTML = '<i class="fas fa-exclamation text-yellow-500"></i>';
+            } else {
+                scoreEl.className = 'text-2xl font-bold text-green-600';
+                iconEl.className = 'bg-green-100 p-3 rounded-full';
+                iconEl.innerHTML = '<i class="fas fa-check-circle text-green-600"></i>';
+            }
+        }
+
+        function renderExposureChart(positions) {
+            if (!exposureChart) {
+                exposureChart = echarts.init(document.getElementById('exposure-chart'));
+            }
+            const option = {
+                tooltip: { trigger: 'item', formatter: '{b}: {c}% ({d}%)' },
+                series: [{
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    data: positions.map(p => ({
+                        name: p.symbol,
+                        value: p.exposure_ratio,
+                        itemStyle: { color: p.unrealized_pnl >= 0 ? '#10B981' : '#EF4444' }
+                    })),
+                    label: { formatter: '{b}\n{c}%' }
+                }]
+            };
+            exposureChart.setOption(option);
+        }
+
+        function renderPositionsTable(positions) {
+            if (positions.length === 0) {
+                document.getElementById('positions-table').innerHTML = '<p class="text-gray-500 text-center py-4">暂无持仓</p>';
+                return;
+            }
+            let html = `<table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">标的</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">数量</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">成本价</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">现价</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">市值</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">盈亏</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">敞口</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">`;
+            positions.forEach(p => {
+                const pnlClass = p.unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600';
+                html += `<tr>
+                    <td class="px-4 py-2"><span class="font-medium">${p.symbol}</span><br><span class="text-xs text-gray-400">${p.symbol_name}</span></td>
+                    <td class="px-4 py-2 text-right">${p.quantity}</td>
+                    <td class="px-4 py-2 text-right">${p.avg_price.toFixed(2)}</td>
+                    <td class="px-4 py-2 text-right">${p.current_price?.toFixed(2) || '-'}</td>
+                    <td class="px-4 py-2 text-right">¥${p.market_value.toLocaleString()}</td>
+                    <td class="px-4 py-2 text-right ${pnlClass}">${p.unrealized_pnl >= 0 ? '+' : ''}${p.unrealized_pnl.toFixed(2)} (${p.pnl_ratio}%)</td>
+                    <td class="px-4 py-2 text-right"><span class="px-2 py-1 rounded text-xs ${p.exposure_ratio > 20 ? 'bg-red-100 text-red-600' : 'bg-gray-100'}">${p.exposure_ratio}%</span></td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('positions-table').innerHTML = html;
+        }
+
+        // 风险规则
+        function loadRiskRules() {
+            fetch(`/api/risk/rules-status/?account_id=${getAccountId()}`)
+                .then(res => res.json())
+                .then(data => {
+                    renderRulesList(data.rules);
+                });
+        }
+
+        function renderRulesList(rules) {
+            if (rules.length === 0) {
+                document.getElementById('rules-list').innerHTML = '<p class="text-gray-500 text-center py-4">暂无风险规则，请在后台添加</p>';
+                return;
+            }
+            let html = '';
+            rules.forEach(r => {
+                const barColor = r.is_triggered ? 'bg-red-500' : (r.usage_ratio > 70 ? 'bg-yellow-500' : 'bg-emerald-500');
+                const statusIcon = r.is_triggered ? '<i class="fas fa-exclamation-circle text-red-500"></i>' : '<i class="fas fa-check-circle text-green-500"></i>';
+                html += `<div class="p-3 border rounded-lg">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-medium">${r.name}</span>
+                        ${statusIcon}
+                    </div>
+                    <div class="text-xs text-gray-500 mb-2">${r.rule_type} · ${r.level}</div>
+                    <div class="flex items-center">
+                        <div class="flex-1 bg-gray-200 rounded-full h-2 mr-3">
+                            <div class="${barColor} h-2 rounded-full" style="width: ${Math.min(r.usage_ratio, 100)}%"></div>
+                        </div>
+                        <span class="text-sm ${r.is_triggered ? 'text-red-500 font-medium' : ''}">${r.current_value} / ${r.threshold}</span>
+                    </div>
+                </div>`;
+            });
+            document.getElementById('rules-list').innerHTML = html;
+        }
+
+        // 价格提醒
+        function loadAlerts() {
+            fetch('/api/risk/stop-alerts/')
+                .then(res => res.json())
+                .then(data => {
+                    renderAlertsList(data.alerts);
+                });
+        }
+
+        function renderAlertsList(alerts) {
+            if (alerts.length === 0) {
+                document.getElementById('alerts-list').innerHTML = '<p class="text-gray-500 text-center py-4">暂无价格提醒</p>';
+                return;
+            }
+            let html = '';
+            alerts.forEach(a => {
+                const conditionColor = a.condition === '高于' ? 'text-green-600' : 'text-red-600';
+                const typeColors = {
+                    'stop_loss': 'bg-red-100 text-red-600',
+                    'take_profit': 'bg-green-100 text-green-600',
+                    'price': 'bg-blue-100 text-blue-600'
+                };
+                const typeClass = typeColors[a.alert_type] || typeColors['price'];
+                html += `<div class="p-3 border rounded-lg flex justify-between items-center">
+                    <div>
+                        <span class="font-medium">${a.symbol}</span>
+                        <span class="text-xs px-2 py-0.5 rounded ml-2 ${typeClass}">${a.alert_type_display}</span>
+                        <span class="${conditionColor} text-sm ml-2">${a.condition} ${a.target_price}</span>
+                        ${a.notes ? `<span class="text-xs text-gray-400 ml-2">${a.notes}</span>` : ''}
+                    </div>
+                    <button onclick="cancelAlert(${a.id})" class="text-gray-400 hover:text-red-500">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>`;
+            });
+            document.getElementById('alerts-list').innerHTML = html;
+        }
+
+        function showAlertModal() {
+            document.getElementById('alert-modal').classList.remove('hidden');
+        }
+
+        function hideAlertModal() {
+            document.getElementById('alert-modal').classList.add('hidden');
+        }
+
+        function createAlert() {
+            const alertType = document.getElementById('alert-type').value;
+            const symbolId = document.getElementById('alert-symbol').value;
+            const condition = document.getElementById('alert-condition').value;
+            const targetPrice = document.getElementById('alert-price').value;
+            const notes = document.getElementById('alert-notes').value;
+
+            if (!targetPrice) {
+                alert('请输入目标价格');
+                return;
+            }
+
+            fetch('/api/risk/stop-alerts/create/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ symbol_id: symbolId, alert_type: alertType, condition, target_price: targetPrice, notes })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+                hideAlertModal();
+                loadAlerts();
+            });
+        }
+
+        function cancelAlert(alertId) {
+            if (!confirm('确定取消此提醒？')) return;
+            fetch(`/api/price-alerts/${alertId}/cancel/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            })
+            .then(res => res.json())
+            .then(() => loadAlerts());
+        }
+
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        window.addEventListener('resize', () => exposureChart?.resize());
+
+        // 初始加载
+        refreshAll();
+        // 每30秒刷新
+        setInterval(refreshAll, 30000);
+    </script>
+</body>
+</html>

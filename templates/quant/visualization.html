@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据可视化中心 - MyTrader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        .tab-btn.active { background-color: #10B981; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- 顶部导航 -->
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <a href="{% url 'home' %}" class="text-gray-600 hover:text-emerald-600">
+                    <i class="fas fa-arrow-left mr-2"></i>返回首页
+                </a>
+                <h1 class="text-xl font-bold text-gray-800">数据可视化中心</h1>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Tab 切换 -->
+        <div class="bg-white rounded-lg shadow-sm mb-6">
+            <div class="flex border-b">
+                <button class="tab-btn active px-6 py-3 font-medium rounded-tl-lg" data-tab="kline">
+                    <i class="fas fa-chart-line mr-2"></i>K线图
+                </button>
+                <button class="tab-btn px-6 py-3 font-medium" data-tab="heatmap">
+                    <i class="fas fa-th mr-2"></i>盈亏热力图
+                </button>
+                <button class="tab-btn px-6 py-3 font-medium rounded-tr-lg" data-tab="compare">
+                    <i class="fas fa-balance-scale mr-2"></i>策略对比
+                </button>
+            </div>
+        </div>
+
+        <!-- K线图 Tab -->
+        <div id="kline-tab" class="tab-content active">
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <div class="flex flex-wrap gap-4 items-end">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">股票代码</label>
+                        <select id="kline-symbol" class="border rounded-lg px-4 py-2 w-40">
+                            <option value="">请选择</option>
+                            {% for symbol in symbols %}
+                            <option value="{{ symbol }}">{{ symbol }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">开始日期</label>
+                        <input type="date" id="kline-start" class="border rounded-lg px-4 py-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">结束日期</label>
+                        <input type="date" id="kline-end" class="border rounded-lg px-4 py-2">
+                    </div>
+                    <button onclick="loadKline()" class="bg-emerald-500 text-white px-6 py-2 rounded-lg hover:bg-emerald-600">
+                        <i class="fas fa-search mr-2"></i>查询
+                    </button>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div id="kline-chart" style="height: 500px;"></div>
+                <div id="volume-chart" style="height: 150px; margin-top: 10px;"></div>
+            </div>
+        </div>
+
+        <!-- 热力图 Tab -->
+        <div id="heatmap-tab" class="tab-content">
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <div class="flex flex-wrap gap-4 items-end">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">账户</label>
+                        <select id="heatmap-account" class="border rounded-lg px-4 py-2 w-48">
+                            <option value="">全部账户</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">年份</label>
+                        <select id="heatmap-year" class="border rounded-lg px-4 py-2 w-32">
+                        </select>
+                    </div>
+                    <button onclick="loadHeatmap()" class="bg-emerald-500 text-white px-6 py-2 rounded-lg hover:bg-emerald-600">
+                        <i class="fas fa-search mr-2"></i>查询
+                    </button>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div id="heatmap-chart" style="height: 200px;"></div>
+            </div>
+        </div>
+
+        <!-- 策略对比 Tab -->
+        <div id="compare-tab" class="tab-content">
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">选择回测结果（最多5个）</label>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-48 overflow-y-auto border rounded-lg p-3">
+                        {% for result in backtest_results %}
+                        <label class="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
+                            <input type="checkbox" class="compare-checkbox" value="{{ result.id }}">
+                            <span class="text-sm">{{ result.strategy.name }} ({{ result.start_date }})</span>
+                        </label>
+                        {% empty %}
+                        <p class="text-gray-500 col-span-full">暂无回测结果</p>
+                        {% endfor %}
+                    </div>
+                </div>
+                <button onclick="loadCompare()" class="bg-emerald-500 text-white px-6 py-2 rounded-lg hover:bg-emerald-600">
+                    <i class="fas fa-chart-bar mr-2"></i>开始对比
+                </button>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-medium mb-4">收益曲线对比</h3>
+                    <div id="compare-chart" style="height: 400px;"></div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-medium mb-4">核心指标对比</h3>
+                    <div id="compare-table" class="overflow-x-auto">
+                        <p class="text-gray-500 text-center py-8">请选择回测结果进行对比</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab 切换
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab + '-tab').classList.add('active');
+            });
+        });
+
+        // 初始化年份选择器
+        const currentYear = new Date().getFullYear();
+        const yearSelect = document.getElementById('heatmap-year');
+        for (let y = currentYear; y >= currentYear - 5; y--) {
+            yearSelect.innerHTML += `<option value="${y}">${y}</option>`;
+        }
+
+        // 设置默认日期
+        const today = new Date();
+        const threeMonthsAgo = new Date(today);
+        threeMonthsAgo.setMonth(today.getMonth() - 3);
+        document.getElementById('kline-end').value = today.toISOString().split('T')[0];
+        document.getElementById('kline-start').value = threeMonthsAgo.toISOString().split('T')[0];
+
+        // K线图
+        let klineChart = null;
+        let volumeChart = null;
+
+        function loadKline() {
+            const symbol = document.getElementById('kline-symbol').value;
+            const startDate = document.getElementById('kline-start').value;
+            const endDate = document.getElementById('kline-end').value;
+
+            if (!symbol) {
+                alert('请选择股票代码');
+                return;
+            }
+
+            fetch(`/quant/api/kline/${symbol}/?start_date=${startDate}&end_date=${endDate}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+                    renderKline(data);
+                });
+        }
+
+        function renderKline(data) {
+            const dates = data.data.map(d => d.date);
+            const ohlc = data.data.map(d => [d.open, d.close, d.low, d.high]);
+            const volumes = data.data.map((d, i) => ({
+                value: d.volume,
+                itemStyle: { color: d.close >= d.open ? '#ef5350' : '#26a69a' }
+            }));
+
+            // K线图
+            if (!klineChart) {
+                klineChart = echarts.init(document.getElementById('kline-chart'));
+            }
+
+            const klineOption = {
+                title: { text: `${data.symbol} K线图`, left: 'center' },
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'cross' }
+                },
+                legend: { data: ['K线', 'MA5', 'MA10', 'MA20'], top: 30 },
+                grid: { left: '10%', right: '10%', bottom: '15%' },
+                xAxis: {
+                    type: 'category',
+                    data: dates,
+                    axisLabel: { rotate: 45 }
+                },
+                yAxis: {
+                    type: 'value',
+                    scale: true,
+                    splitArea: { show: true }
+                },
+                dataZoom: [
+                    { type: 'inside', start: 50, end: 100 },
+                    { show: true, type: 'slider', bottom: '5%', start: 50, end: 100 }
+                ],
+                series: [
+                    {
+                        name: 'K线',
+                        type: 'candlestick',
+                        data: ohlc,
+                        itemStyle: {
+                            color: '#ef5350',
+                            color0: '#26a69a',
+                            borderColor: '#ef5350',
+                            borderColor0: '#26a69a'
+                        }
+                    },
+                    {
+                        name: 'MA5',
+                        type: 'line',
+                        data: data.ma5,
+                        smooth: true,
+                        lineStyle: { width: 1 },
+                        symbol: 'none'
+                    },
+                    {
+                        name: 'MA10',
+                        type: 'line',
+                        data: data.ma10,
+                        smooth: true,
+                        lineStyle: { width: 1 },
+                        symbol: 'none'
+                    },
+                    {
+                        name: 'MA20',
+                        type: 'line',
+                        data: data.ma20,
+                        smooth: true,
+                        lineStyle: { width: 1 },
+                        symbol: 'none'
+                    }
+                ]
+            };
+            klineChart.setOption(klineOption);
+
+            // 成交量图
+            if (!volumeChart) {
+                volumeChart = echarts.init(document.getElementById('volume-chart'));
+            }
+
+            const volumeOption = {
+                tooltip: { trigger: 'axis' },
+                grid: { left: '10%', right: '10%', top: '10%', bottom: '20%' },
+                xAxis: {
+                    type: 'category',
+                    data: dates,
+                    axisLabel: { show: false }
+                },
+                yAxis: { type: 'value', scale: true },
+                dataZoom: [
+                    { type: 'inside', start: 50, end: 100, xAxisIndex: 0 }
+                ],
+                series: [{
+                    name: '成交量',
+                    type: 'bar',
+                    data: volumes
+                }]
+            };
+            volumeChart.setOption(volumeOption);
+
+            // 联动
+            klineChart.on('dataZoom', function(params) {
+                volumeChart.dispatchAction({
+                    type: 'dataZoom',
+                    start: params.start,
+                    end: params.end
+                });
+            });
+        }
+
+        // 热力图
+        let heatmapChart = null;
+
+        function loadHeatmap() {
+            const accountId = document.getElementById('heatmap-account').value;
+            const year = document.getElementById('heatmap-year').value;
+
+            fetch(`/api/heatmap/?account_id=${accountId}&year=${year}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+                    // 更新账户选择器
+                    const accountSelect = document.getElementById('heatmap-account');
+                    if (accountSelect.options.length <= 1) {
+                        data.accounts.forEach(acc => {
+                            accountSelect.innerHTML += `<option value="${acc.id}">${acc.name}</option>`;
+                        });
+                    }
+                    renderHeatmap(data);
+                });
+        }
+
+        function renderHeatmap(data) {
+            if (!heatmapChart) {
+                heatmapChart = echarts.init(document.getElementById('heatmap-chart'));
+            }
+
+            // 计算数据范围
+            const values = data.data.map(d => d[1]);
+            const maxVal = Math.max(...values.map(Math.abs), 1);
+
+            const option = {
+                title: { text: `${data.year}年 盈亏热力图`, left: 'center' },
+                tooltip: {
+                    formatter: function(params) {
+                        return `${params.value[0]}<br/>盈亏: ${params.value[1].toFixed(2)}`;
+                    }
+                },
+                visualMap: {
+                    min: -maxVal,
+                    max: maxVal,
+                    calculable: true,
+                    orient: 'horizontal',
+                    left: 'center',
+                    bottom: '5%',
+                    inRange: {
+                        color: ['#ef5350', '#fff', '#26a69a']
+                    }
+                },
+                calendar: {
+                    top: 50,
+                    left: 30,
+                    right: 30,
+                    cellSize: ['auto', 15],
+                    range: data.year,
+                    itemStyle: { borderWidth: 0.5 },
+                    yearLabel: { show: false }
+                },
+                series: [{
+                    type: 'heatmap',
+                    coordinateSystem: 'calendar',
+                    data: data.data
+                }]
+            };
+            heatmapChart.setOption(option);
+        }
+
+        // 策略对比
+        let compareChart = null;
+
+        function loadCompare() {
+            const checkboxes = document.querySelectorAll('.compare-checkbox:checked');
+            const ids = Array.from(checkboxes).map(cb => cb.value);
+
+            if (ids.length < 2) {
+                alert('请至少选择2个回测结果进行对比');
+                return;
+            }
+
+            if (ids.length > 5) {
+                alert('最多选择5个回测结果');
+                return;
+            }
+
+            fetch(`/quant/api/compare/?result_ids=${ids.join(',')}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                        return;
+                    }
+                    renderCompare(data.results);
+                });
+        }
+
+        function renderCompare(results) {
+            // 收益曲线对比
+            if (!compareChart) {
+                compareChart = echarts.init(document.getElementById('compare-chart'));
+            }
+
+            const colors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de'];
+            const series = results.map((r, i) => {
+                const curve = r.equity_curve || [];
+                return {
+                    name: r.name,
+                    type: 'line',
+                    smooth: true,
+                    symbol: 'none',
+                    data: curve.map(c => [c.date, c.value]),
+                    lineStyle: { color: colors[i] }
+                };
+            });
+
+            const option = {
+                tooltip: { trigger: 'axis' },
+                legend: { data: results.map(r => r.name), top: 0 },
+                grid: { left: '10%', right: '5%', bottom: '10%', top: '15%' },
+                xAxis: { type: 'category' },
+                yAxis: { type: 'value', scale: true },
+                series: series
+            };
+            compareChart.setOption(option, true);
+
+            // 指标对比表格
+            let tableHtml = `
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">策略</th>
+                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">总收益率</th>
+                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">夏普比率</th>
+                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">最大回撤</th>
+                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">胜率</th>
+                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">交易次数</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+            `;
+
+            results.forEach(r => {
+                const returnClass = r.total_return >= 0 ? 'text-green-600' : 'text-red-600';
+                tableHtml += `
+                    <tr>
+                        <td class="px-4 py-2 text-sm">${r.name}</td>
+                        <td class="px-4 py-2 text-sm text-right ${returnClass}">${r.total_return.toFixed(2)}%</td>
+                        <td class="px-4 py-2 text-sm text-right">${r.sharpe_ratio?.toFixed(2) || '-'}</td>
+                        <td class="px-4 py-2 text-sm text-right text-red-600">${r.max_drawdown.toFixed(2)}%</td>
+                        <td class="px-4 py-2 text-sm text-right">${r.win_rate?.toFixed(1) || '-'}%</td>
+                        <td class="px-4 py-2 text-sm text-right">${r.total_trades}</td>
+                    </tr>
+                `;
+            });
+
+            tableHtml += '</tbody></table>';
+            document.getElementById('compare-table').innerHTML = tableHtml;
+        }
+
+        // 窗口大小变化时重绘图表
+        window.addEventListener('resize', () => {
+            klineChart?.resize();
+            volumeChart?.resize();
+            heatmapChart?.resize();
+            compareChart?.resize();
+        });
+
+        // 初始加载热力图
+        loadHeatmap();
+    </script>
+</body>
+</html>

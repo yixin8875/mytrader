@@ -203,6 +203,7 @@
                     <a href="{% url 'admin:trading_riskrule_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">风险规则</a>
                     <a href="{% url 'admin:trading_riskalert_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">风险警告</a>
                     <a href="{% url 'admin:trading_risksnapshot_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">风险快照</a>
+                    <a href="{% url 'risk_dashboard' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">风控中心</a>
                 </div>
             </div>
 
@@ -223,6 +224,7 @@
                     <a href="{% url 'admin:trading_dailyreport_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">日报</a>
                     <a href="{% url 'admin:trading_monthlyreport_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">月报</a>
                     <a href="{% url 'analytics' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">深度分析</a>
+                    <a href="{% url 'trade_analysis' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">交易分析深化</a>
                 </div>
             </div>
 
@@ -233,6 +235,16 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
                     </svg>
                     数据导入导出
+                </a>
+            </div>
+
+            <!-- 数据管理 -->
+            <div class="sidebar-item">
+                <a href="{% url 'data_management' %}" class="flex items-center px-6 py-3 text-gray-700 hover:bg-emerald-50 transition">
+                    <svg class="w-5 h-5 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
+                    </svg>
+                    数据管理
                 </a>
             </div>
 
@@ -262,6 +274,7 @@
                 </a>
                 <div class="sidebar-submenu bg-gray-50">
                     <a href="{% url 'stock_data_page' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">股票数据</a>
+                    <a href="{% url 'visualization' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">数据可视化</a>
                     <a href="{% url 'admin:quant_strategy_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">量化策略</a>
                     <a href="{% url 'admin:quant_backtestresult_changelist' %}" class="block px-12 py-2 text-sm text-gray-600 hover:text-emerald-600 hover:bg-emerald-50 transition">回测结果</a>
                 </div>

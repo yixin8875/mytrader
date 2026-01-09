@@ -276,3 +276,6 @@ LOGGING = {
     },
 }
 
+# 登录URL配置
+LOGIN_URL = '/admin/login/'
+

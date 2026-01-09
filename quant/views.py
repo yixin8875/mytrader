@@ -5,9 +5,11 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Min, Max
 from .models import Strategy, BacktestResult, StockData
 from .tasks import run_backtest_task, fetch_stock_history
+from decimal import Decimal
 import json
 import re
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -278,3 +280,120 @@ def backtest_task_status(request, task_id):
             logger.error(f'回测任务失败: {task_id}, 错误: {result.result}')
 
     return JsonResponse(response)
+
+
+# ============ 可视化 ============
+
+@login_required
+def visualization_page(request):
+    """可视化中心页面"""
+    # 获取可用股票列表
+    symbols = list(StockData.objects.values_list('symbol', flat=True).distinct().order_by('symbol'))
+
+    # 获取用户的回测结果
+    backtest_results = BacktestResult.objects.filter(
+        strategy__owner=request.user
+    ).select_related('strategy').order_by('-created_at')[:50]
+
+    return render(request, 'quant/visualization.html', {
+        'symbols': symbols,
+        'backtest_results': backtest_results,
+    })
+
+
+@login_required
+def kline_api(request, symbol):
+    """K线数据 API"""
+    if not validate_symbol(symbol):
+        return JsonResponse({'error': '无效的股票代码'}, status=400)
+
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    queryset = StockData.objects.filter(symbol=symbol).order_by('date')
+
+    if start_date:
+        queryset = queryset.filter(date__gte=start_date)
+    if end_date:
+        queryset = queryset.filter(date__lte=end_date)
+
+    # 限制返回数据量
+    data = list(queryset.values('date', 'open', 'high', 'low', 'close', 'volume')[:500])
+
+    # 转换数据格式
+    result = []
+    for item in data:
+        result.append({
+            'date': item['date'].strftime('%Y-%m-%d'),
+            'open': float(item['open']),
+            'high': float(item['high']),
+            'low': float(item['low']),
+            'close': float(item['close']),
+            'volume': item['volume'],
+        })
+
+    # 计算均线
+    closes = [item['close'] for item in result]
+    ma5 = calculate_ma(closes, 5)
+    ma10 = calculate_ma(closes, 10)
+    ma20 = calculate_ma(closes, 20)
+
+    return JsonResponse({
+        'symbol': symbol,
+        'data': result,
+        'ma5': ma5,
+        'ma10': ma10,
+        'ma20': ma20,
+    })
+
+
+def calculate_ma(prices, period):
+    """计算移动平均线"""
+    result = []
+    for i in range(len(prices)):
+        if i < period - 1:
+            result.append(None)
+        else:
+            avg = sum(prices[i - period + 1:i + 1]) / period
+            result.append(round(avg, 2))
+    return result
+
+
+@login_required
+def compare_api(request):
+    """回测结果对比 API"""
+    result_ids = request.GET.get('result_ids', '')
+
+    if not result_ids:
+        return JsonResponse({'error': '请选择回测结果'}, status=400)
+
+    try:
+        ids = [int(x) for x in result_ids.split(',') if x.strip()]
+    except ValueError:
+        return JsonResponse({'error': '无效的结果ID'}, status=400)
+
+    if len(ids) > 5:
+        return JsonResponse({'error': '最多对比5个结果'}, status=400)
+
+    results = BacktestResult.objects.filter(
+        id__in=ids,
+        strategy__owner=request.user
+    ).select_related('strategy')
+
+    if not results:
+        return JsonResponse({'error': '未找到有效的回测结果'}, status=404)
+
+    comparison = []
+    for r in results:
+        comparison.append({
+            'id': r.id,
+            'name': r.name or f"{r.strategy.name} ({r.start_date}~{r.end_date})",
+            'total_return': float(r.total_return),
+            'sharpe_ratio': float(r.sharpe_ratio) if r.sharpe_ratio else None,
+            'max_drawdown': float(r.max_drawdown),
+            'win_rate': float(r.win_rate) if r.win_rate else None,
+            'total_trades': r.total_trades,
+            'equity_curve': r.equity_curve,
+        })
+
+    return JsonResponse({'results': comparison})

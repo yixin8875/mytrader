@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据管理 - MyTrader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- 顶部导航 -->
+    <nav class="bg-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <a href="{% url 'home' %}" class="text-gray-600 hover:text-emerald-600">
+                    <i class="fas fa-arrow-left mr-2"></i>返回首页
+                </a>
+                <h1 class="text-xl font-bold text-gray-800">
+                    <i class="fas fa-database text-emerald-600 mr-2"></i>数据管理
+                </h1>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <!-- 数据概览 -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">股票数量</p>
+                        <p class="text-2xl font-bold text-gray-800">{{ stock_count }}</p>
+                    </div>
+                    <div class="bg-blue-100 p-3 rounded-full">
+                        <i class="fas fa-chart-line text-blue-600"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">数据记录</p>
+                        <p class="text-2xl font-bold text-gray-800">{{ record_count|default:0 }}</p>
+                    </div>
+                    <div class="bg-green-100 p-3 rounded-full">
+                        <i class="fas fa-table text-green-600"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">数据起始</p>
+                        <p class="text-lg font-bold text-gray-800">{{ date_range.min_date|default:"-" }}</p>
+                    </div>
+                    <div class="bg-purple-100 p-3 rounded-full">
+                        <i class="fas fa-calendar-alt text-purple-600"></i>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-sm p-5">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">数据截止</p>
+                        <p class="text-lg font-bold text-gray-800">{{ date_range.max_date|default:"-" }}</p>
+                    </div>
+                    <div class="bg-orange-100 p-3 rounded-full">
+                        <i class="fas fa-calendar-check text-orange-600"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- 备份管理 -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h3 class="text-lg font-medium mb-4 flex items-center">
+                    <i class="fas fa-cloud-upload-alt text-blue-600 mr-2"></i>数据备份
+                </h3>
+                <div class="space-y-4">
+                    <div class="grid grid-cols-3 gap-3">
+                        <button onclick="createBackup('full')" class="py-3 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition">
+                            <i class="fas fa-database mr-2"></i>完整备份
+                        </button>
+                        <button onclick="createBackup('trading')" class="py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
+                            <i class="fas fa-exchange-alt mr-2"></i>交易数据
+                        </button>
+                        <button onclick="createBackup('quant')" class="py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
+                            <i class="fas fa-chart-bar mr-2"></i>量化数据
+                        </button>
+                    </div>
+                    <div id="backup-status" class="hidden p-3 bg-gray-50 rounded-lg text-sm"></div>
+                </div>
+
+                <h4 class="text-md font-medium mt-6 mb-3">备份历史</h4>
+                <div id="backup-list" class="space-y-2 max-h-48 overflow-y-auto">
+                    <p class="text-gray-500 text-center py-4">加载中...</p>
+                </div>
+            </div>
+
+            <!-- 数据恢复 -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h3 class="text-lg font-medium mb-4 flex items-center">
+                    <i class="fas fa-cloud-download-alt text-green-600 mr-2"></i>数据恢复
+                </h3>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center" id="drop-zone">
+                    <i class="fas fa-file-upload text-4xl text-gray-400 mb-3"></i>
+                    <p class="text-gray-600 mb-3">拖拽备份文件到此处，或点击选择文件</p>
+                    <input type="file" id="restore-file" accept=".json" class="hidden" onchange="handleFileSelect(event)">
+                    <button onclick="document.getElementById('restore-file').click()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                        选择文件
+                    </button>
+                </div>
+                <div id="restore-status" class="hidden mt-4 p-3 bg-gray-50 rounded-lg text-sm"></div>
+
+                <div class="mt-6 p-4 bg-yellow-50 rounded-lg">
+                    <p class="text-sm text-yellow-800">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        <strong>注意：</strong>恢复数据会覆盖现有数据，请确保已备份当前数据。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- 数据质量检查 -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-medium flex items-center">
+                        <i class="fas fa-check-circle text-orange-600 mr-2"></i>数据质量检查
+                    </h3>
+                    <button onclick="runQualityCheck()" class="text-sm bg-orange-500 text-white px-3 py-1 rounded hover:bg-orange-600">
+                        <i class="fas fa-play mr-1"></i>开始检查
+                    </button>
+                </div>
+                <div class="mb-4">
+                    <input type="text" id="check-symbol" placeholder="输入股票代码（留空检查全部）" class="w-full px-3 py-2 border rounded-lg">
+                </div>
+                <div id="quality-result" class="space-y-2 max-h-64 overflow-y-auto">
+                    <p class="text-gray-500 text-center py-4">点击"开始检查"运行数据质量检查</p>
+                </div>
+            </div>
+
+            <!-- 数据源配置 -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h3 class="text-lg font-medium mb-4 flex items-center">
+                    <i class="fas fa-plug text-purple-600 mr-2"></i>数据源配置
+                </h3>
+                <div id="sources-list" class="space-y-3">
+                    <p class="text-gray-500 text-center py-4">加载中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // 备份功能
+        function createBackup(type) {
+            const statusEl = document.getElementById('backup-status');
+            statusEl.classList.remove('hidden');
+            statusEl.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>正在备份...';
+            statusEl.className = 'p-3 bg-blue-50 text-blue-700 rounded-lg text-sm';
+
+            fetch('/api/data/backup/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ type })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    statusEl.innerHTML = `<i class="fas fa-times-circle mr-2"></i>${data.error}`;
+                    statusEl.className = 'p-3 bg-red-50 text-red-700 rounded-lg text-sm';
+                } else {
+                    statusEl.innerHTML = `<i class="fas fa-check-circle mr-2"></i>${data.message}`;
+                    statusEl.className = 'p-3 bg-green-50 text-green-700 rounded-lg text-sm';
+                    loadBackups();
+                }
+            });
+        }
+
+        function loadBackups() {
+            fetch('/api/data/backups/')
+                .then(res => res.json())
+                .then(data => {
+                    const list = document.getElementById('backup-list');
+                    if (data.backups.length === 0) {
+                        list.innerHTML = '<p class="text-gray-500 text-center py-4">暂无备份</p>';
+                        return;
+                    }
+                    let html = '';
+                    data.backups.forEach(b => {
+                        const sizeKB = (b.size / 1024).toFixed(1);
+                        html += `<div class="flex justify-between items-center p-3 border rounded-lg">
+                            <div>
+                                <span class="font-medium text-sm">${b.filename}</span>
+                                <span class="text-xs text-gray-400 ml-2">${sizeKB} KB</span>
+                                <br><span class="text-xs text-gray-500">${b.created_at}</span>
+                            </div>
+                            <div class="flex space-x-2">
+                                <a href="/api/data/backups/${b.filename}/download/" class="text-blue-500 hover:text-blue-700">
+                                    <i class="fas fa-download"></i>
+                                </a>
+                                <button onclick="deleteBackup('${b.filename}')" class="text-red-500 hover:text-red-700">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>`;
+                    });
+                    list.innerHTML = html;
+                });
+        }
+
+        function deleteBackup(filename) {
+            if (!confirm('确定删除此备份？')) return;
+            fetch(`/api/data/backups/${filename}/delete/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() }
+            })
+            .then(res => res.json())
+            .then(() => loadBackups());
+        }
+
+        // 恢复功能
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            restoreFromFile(file);
+        }
+
+        function restoreFromFile(file) {
+            if (!confirm('确定要恢复数据？这将覆盖现有数据！')) return;
+
+            const statusEl = document.getElementById('restore-status');
+            statusEl.classList.remove('hidden');
+            statusEl.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>正在恢复...';
+            statusEl.className = 'p-3 bg-blue-50 text-blue-700 rounded-lg text-sm';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/api/data/restore/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCsrfToken() },
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    statusEl.innerHTML = `<i class="fas fa-times-circle mr-2"></i>${data.error}`;
+                    statusEl.className = 'p-3 bg-red-50 text-red-700 rounded-lg text-sm';
+                } else {
+                    statusEl.innerHTML = `<i class="fas fa-check-circle mr-2"></i>${data.message}`;
+                    statusEl.className = 'p-3 bg-green-50 text-green-700 rounded-lg text-sm';
+                }
+            });
+        }
+
+        // 拖拽上传
+        const dropZone = document.getElementById('drop-zone');
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-emerald-500', 'bg-emerald-50');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-emerald-500', 'bg-emerald-50');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-emerald-500', 'bg-emerald-50');
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.json')) {
+                restoreFromFile(file);
+            } else {
+                alert('请上传JSON格式的备份文件');
+            }
+        });
+
+        // 数据质量检查
+        function runQualityCheck() {
+            const symbol = document.getElementById('check-symbol').value;
+            const resultEl = document.getElementById('quality-result');
+            resultEl.innerHTML = '<p class="text-center py-4"><i class="fas fa-spinner fa-spin mr-2"></i>检查中...</p>';
+
+            fetch(`/api/data/quality-check/?symbol=${symbol}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.issues.length === 0) {
+                        resultEl.innerHTML = '<p class="text-green-600 text-center py-4"><i class="fas fa-check-circle mr-2"></i>数据质量良好，未发现问题</p>';
+                        return;
+                    }
+                    let html = `<p class="text-sm text-gray-500 mb-2">发现 ${data.total_issues} 个问题：</p>`;
+                    data.issues.forEach(issue => {
+                        const colors = {
+                            'missing_dates': 'bg-yellow-100 text-yellow-800',
+                            'invalid_price': 'bg-red-100 text-red-800',
+                            'extreme_volatility': 'bg-orange-100 text-orange-800',
+                            'zero_volume': 'bg-gray-100 text-gray-800',
+                            'incomplete_data': 'bg-blue-100 text-blue-800',
+                            'no_data': 'bg-red-100 text-red-800'
+                        };
+                        const colorClass = colors[issue.type] || 'bg-gray-100 text-gray-800';
+                        html += `<div class="p-2 ${colorClass} rounded text-sm mb-1">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>${issue.message}
+                        </div>`;
+                    });
+                    resultEl.innerHTML = html;
+                });
+        }
+
+        // 数据源
+        function loadDataSources() {
+            fetch('/api/data/sources/')
+                .then(res => res.json())
+                .then(data => {
+                    const list = document.getElementById('sources-list');
+                    let html = '';
+                    data.sources.forEach(s => {
+                        const statusClass = s.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600';
+                        const statusText = s.status === 'active' ? '已启用' : '可用';
+                        html += `<div class="p-4 border rounded-lg">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <span class="font-medium">${s.name}</span>
+                                    <span class="text-xs px-2 py-0.5 rounded ml-2 ${statusClass}">${statusText}</span>
+                                </div>
+                            </div>
+                            <p class="text-sm text-gray-500 mt-1">${s.description}</p>
+                            <div class="mt-2 flex flex-wrap gap-1">
+                                ${s.markets.map(m => `<span class="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded">${m}</span>`).join('')}
+                                ${s.features.map(f => `<span class="text-xs px-2 py-0.5 bg-gray-50 text-gray-600 rounded">${f}</span>`).join('')}
+                            </div>
+                        </div>`;
+                    });
+                    list.innerHTML = html;
+                });
+        }
+
+        // 初始化
+        loadBackups();
+        loadDataSources();
+    </script>
+</body>
+</html>

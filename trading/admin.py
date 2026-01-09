@@ -6,7 +6,7 @@ from .models import (
     DailyReport, MonthlyReport, PerformanceMetrics, TradeReview,
     RiskRule, RiskAlert, RiskSnapshot,
     WatchlistGroup, WatchlistItem, TradePlan, DailyNote,
-    Notification, PriceAlert, NotificationSetting
+    Notification, PriceAlert, NotificationSetting, TradeTag
 )
 
 
@@ -171,27 +171,32 @@ class TradeLogAdmin(admin.ModelAdmin):
     """交易日志管理界面"""
     inlines = [TradeImageInline, TradeReviewInline]
     list_display = ['trade_time', 'account', 'symbol', 'side', 'quantity',
-                    'executed_price', 'total_amount', 'profit_loss', 'status']
-    list_filter = ['status', 'side', 'account', 'strategy', 'symbol', 'trade_time']
+                    'executed_price', 'total_amount', 'profit_loss', 'holding_display', 'tags_display', 'status']
+    list_filter = ['status', 'side', 'account', 'strategy', 'symbol', 'tags', 'trade_time']
     search_fields = ['symbol__code', 'symbol__name', 'order_id', 'account__name', 'strategy__name']
     date_hierarchy = 'trade_time'
+    filter_horizontal = ['tags']
 
     def get_readonly_fields(self, request, obj=None):
         if obj:  # 编辑已存在的对象
-            return ['trade_time', 'created_at', 'total_amount']
+            return ['trade_time', 'created_at', 'total_amount', 'holding_minutes']
         return ['trade_time', 'created_at']  # 新建时不显示total_amount
 
     def get_fieldsets(self, request, obj=None):
         if obj:  # 编辑已存在的对象，显示total_amount
             return (
                 ('基本信息', {
-                    'fields': ('account', 'strategy', 'symbol', 'side')
+                    'fields': ('account', 'strategy', 'symbol', 'side', 'tags')
                 }),
                 ('交易详情', {
                     'fields': ('quantity', 'price', 'executed_price', 'order_id', 'total_amount')
                 }),
                 ('费用与盈亏', {
                     'fields': ('commission', 'slippage', 'profit_loss')
+                }),
+                ('持仓时间', {
+                    'fields': ('open_time', 'close_time', 'holding_minutes'),
+                    'classes': ('collapse',)
                 }),
                 ('状态', {
                     'fields': ('status', 'trade_time')
@@ -203,13 +208,17 @@ class TradeLogAdmin(admin.ModelAdmin):
         else:  # 新建时不显示total_amount
             return (
                 ('基本信息', {
-                    'fields': ('account', 'strategy', 'symbol', 'side')
+                    'fields': ('account', 'strategy', 'symbol', 'side', 'tags')
                 }),
                 ('交易详情', {
                     'fields': ('quantity', 'price', 'executed_price', 'order_id')
                 }),
                 ('费用与盈亏', {
                     'fields': ('commission', 'slippage', 'profit_loss')
+                }),
+                ('持仓时间', {
+                    'fields': ('open_time', 'close_time'),
+                    'classes': ('collapse',)
                 }),
                 ('状态', {
                     'fields': ('status', 'trade_time')
@@ -222,6 +231,31 @@ class TradeLogAdmin(admin.ModelAdmin):
     def total_amount(self, obj):
         return f"{obj.total_amount:,.2f}"
     total_amount.short_description = '交易总额'
+
+    def holding_display(self, obj):
+        if obj.holding_minutes is None:
+            return '-'
+        if obj.holding_minutes < 60:
+            return f"{obj.holding_minutes}分钟"
+        elif obj.holding_minutes < 1440:
+            hours = obj.holding_minutes // 60
+            mins = obj.holding_minutes % 60
+            return f"{hours}小时{mins}分"
+        else:
+            days = obj.holding_minutes // 1440
+            return f"{days}天"
+    holding_display.short_description = '持仓时长'
+
+    def tags_display(self, obj):
+        tags = obj.tags.all()[:3]
+        if not tags:
+            return '-'
+        html = ' '.join([
+            f'<span style="background:{t.color};color:white;padding:2px 6px;border-radius:3px;font-size:11px;">{t.name}</span>'
+            for t in tags
+        ])
+        return format_html(html)
+    tags_display.short_description = '标签'
 
     class Media:
         css = {
@@ -1081,3 +1115,42 @@ class NotificationSettingAdmin(admin.ModelAdmin):
             'description': '在此时段内不发送通知'
         }),
     )
+
+
+@admin.register(TradeTag)
+class TradeTagAdmin(admin.ModelAdmin):
+    """交易标签管理界面"""
+    list_display = ['name', 'category', 'color_display', 'trade_count', 'win_rate_display', 'owner', 'is_system']
+    list_filter = ['category', 'is_system', 'owner']
+    search_fields = ['name', 'description']
+
+    fieldsets = (
+        ('基本信息', {
+            'fields': ('name', 'category', 'color', 'description')
+        }),
+        ('归属', {
+            'fields': ('owner', 'is_system')
+        }),
+    )
+
+    def color_display(self, obj):
+        return format_html(
+            '<span style="background:{};color:white;padding:3px 10px;border-radius:3px;">{}</span>',
+            obj.color, obj.name
+        )
+    color_display.short_description = '预览'
+
+    def trade_count(self, obj):
+        return obj.trade_logs.count()
+    trade_count.short_description = '交易数'
+
+    def win_rate_display(self, obj):
+        trades = obj.trade_logs.all()
+        total = trades.count()
+        if total == 0:
+            return '-'
+        wins = trades.filter(profit_loss__gt=0).count()
+        rate = wins / total * 100
+        color = 'green' if rate >= 50 else 'red'
+        return format_html('<span style="color:{};">{:.1f}%</span>', color, rate)
+    win_rate_display.short_description = '胜率'

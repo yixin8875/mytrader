@@ -265,6 +265,12 @@ class TradeLog(models.Model):
     profit_loss = models.DecimalField('盈亏', max_digits=15, decimal_places=2, default=0,
                                      help_text='已实现盈亏')
     trade_time = models.DateTimeField('交易时间', default=timezone.now)
+    # 持仓时间分析字段
+    open_time = models.DateTimeField('开仓时间', null=True, blank=True, help_text='建仓时间')
+    close_time = models.DateTimeField('平仓时间', null=True, blank=True, help_text='平仓时间')
+    holding_minutes = models.IntegerField('持仓分钟数', null=True, blank=True, help_text='自动计算')
+    # 交易标签
+    tags = models.ManyToManyField('TradeTag', verbose_name='交易标签', blank=True, related_name='trade_logs')
     notes = models.TextField('备注', blank=True)
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
 
@@ -286,6 +292,13 @@ class TradeLog(models.Model):
         if self.quantity is not None and self.price is not None:
             return self.quantity * self.price
         return 0
+
+    def save(self, *args, **kwargs):
+        # 自动计算持仓时间
+        if self.open_time and self.close_time:
+            delta = self.close_time - self.open_time
+            self.holding_minutes = int(delta.total_seconds() / 60)
+        super().save(*args, **kwargs)
 
 
 class Position(models.Model):
@@ -1103,10 +1116,19 @@ class PriceAlert(models.Model):
         ('expired', '已过期'),
     ]
 
+    ALERT_TYPE_CHOICES = [
+        ('price', '价格提醒'),
+        ('stop_loss', '止损提醒'),
+        ('take_profit', '止盈提醒'),
+    ]
+
     owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='用户',
                               related_name='price_alerts')
     symbol = models.ForeignKey('Symbol', on_delete=models.CASCADE, verbose_name='标的',
                                related_name='price_alerts')
+    position = models.ForeignKey('Position', on_delete=models.SET_NULL, verbose_name='关联持仓',
+                                 related_name='alerts', null=True, blank=True)
+    alert_type = models.CharField('提醒类型', max_length=20, choices=ALERT_TYPE_CHOICES, default='price')
 
     condition = models.CharField('条件', max_length=20, choices=CONDITION_CHOICES)
     target_price = models.DecimalField('目标价格', max_digits=15, decimal_places=4)
@@ -1196,6 +1218,35 @@ class PriceAlert(models.Model):
         )
 
 
+class TradeTag(models.Model):
+    """交易标签模型"""
+    TAG_CATEGORY_CHOICES = [
+        ('entry', '入场类型'),
+        ('exit', '出场类型'),
+        ('market', '市场环境'),
+        ('pattern', '形态'),
+        ('custom', '自定义'),
+    ]
+
+    name = models.CharField('标签名称', max_length=50)
+    category = models.CharField('标签分类', max_length=20, choices=TAG_CATEGORY_CHOICES, default='custom')
+    color = models.CharField('颜色', max_length=20, default='#3B82F6', help_text='十六进制颜色代码')
+    description = models.CharField('描述', max_length=200, blank=True)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='所有者',
+                              related_name='trade_tags')
+    is_system = models.BooleanField('系统标签', default=False, help_text='系统预设标签')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '交易标签'
+        verbose_name_plural = '交易标签'
+        unique_together = [['owner', 'name']]
+        ordering = ['category', 'name']
+
+    def __str__(self):
+        return f"{self.name} ({self.get_category_display()})"
+
+
 class NotificationSetting(models.Model):
     """通知设置模型"""
     owner = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name='用户',
@@ -1239,3 +1290,129 @@ class NotificationSetting(models.Model):
         else:
             # 跨天的静默时段（如 22:00 - 08:00）
             return now >= self.quiet_hours_start or now <= self.quiet_hours_end
+
+
+class Webhook(models.Model):
+    """Webhook配置模型"""
+    WEBHOOK_TYPE_CHOICES = [
+        ('inbound', '接收信号'),
+        ('outbound', '发送通知'),
+    ]
+
+    STATUS_CHOICES = [
+        ('active', '启用'),
+        ('inactive', '停用'),
+    ]
+
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='用户',
+                              related_name='webhooks')
+    name = models.CharField('名称', max_length=100)
+    webhook_type = models.CharField('类型', max_length=20, choices=WEBHOOK_TYPE_CHOICES)
+    url = models.URLField('URL地址', blank=True, help_text='outbound类型需要填写')
+    secret_key = models.CharField('密钥', max_length=64, unique=True)
+    status = models.CharField('状态', max_length=20, choices=STATUS_CHOICES, default='active')
+    description = models.TextField('描述', blank=True)
+    last_triggered = models.DateTimeField('最后触发时间', null=True, blank=True)
+    trigger_count = models.IntegerField('触发次数', default=0)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Webhook'
+        verbose_name_plural = 'Webhook'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} ({self.get_webhook_type_display()})"
+
+    def save(self, *args, **kwargs):
+        if not self.secret_key:
+            import secrets
+            self.secret_key = secrets.token_urlsafe(32)
+        super().save(*args, **kwargs)
+
+
+class WebhookLog(models.Model):
+    """Webhook日志"""
+    webhook = models.ForeignKey(Webhook, on_delete=models.CASCADE, verbose_name='Webhook',
+                                related_name='logs')
+    direction = models.CharField('方向', max_length=10)  # in/out
+    payload = models.JSONField('数据', default=dict)
+    response_code = models.IntegerField('响应码', null=True, blank=True)
+    success = models.BooleanField('成功', default=False)
+    error_message = models.TextField('错误信息', blank=True)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Webhook日志'
+        verbose_name_plural = 'Webhook日志'
+        ordering = ['-created_at']
+
+
+class ScheduledReport(models.Model):
+    """定时报告配置"""
+    FREQUENCY_CHOICES = [
+        ('daily', '每日'),
+        ('weekly', '每周'),
+        ('monthly', '每月'),
+    ]
+
+    REPORT_TYPE_CHOICES = [
+        ('trade_summary', '交易总结'),
+        ('performance', '绩效报告'),
+        ('risk_report', '风险报告'),
+    ]
+
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='用户',
+                              related_name='scheduled_reports')
+    name = models.CharField('报告名称', max_length=100)
+    report_type = models.CharField('报告类型', max_length=20, choices=REPORT_TYPE_CHOICES)
+    frequency = models.CharField('频率', max_length=20, choices=FREQUENCY_CHOICES)
+    send_time = models.TimeField('发送时间', default='08:00')
+    send_day = models.IntegerField('发送日', default=1, help_text='每周几(1-7)或每月几号(1-31)')
+    email = models.EmailField('接收邮箱')
+    is_active = models.BooleanField('启用', default=True)
+    last_sent = models.DateTimeField('最后发送时间', null=True, blank=True)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '定时报告'
+        verbose_name_plural = '定时报告'
+
+    def __str__(self):
+        return f"{self.name} ({self.get_frequency_display()})"
+
+
+class StrategySignal(models.Model):
+    """策略信号记录"""
+    SIGNAL_TYPE_CHOICES = [
+        ('buy', '买入信号'),
+        ('sell', '卖出信号'),
+        ('hold', '持有'),
+    ]
+
+    SOURCE_CHOICES = [
+        ('backtest', '回测'),
+        ('live', '实盘'),
+        ('webhook', 'Webhook'),
+    ]
+
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='用户',
+                              related_name='strategy_signals')
+    strategy_name = models.CharField('策略名称', max_length=100)
+    symbol = models.CharField('标的代码', max_length=20)
+    signal_type = models.CharField('信号类型', max_length=10, choices=SIGNAL_TYPE_CHOICES)
+    source = models.CharField('来源', max_length=20, choices=SOURCE_CHOICES)
+    price = models.DecimalField('信号价格', max_digits=12, decimal_places=4, null=True, blank=True)
+    quantity = models.IntegerField('建议数量', null=True, blank=True)
+    reason = models.TextField('信号原因', blank=True)
+    extra_data = models.JSONField('附加数据', default=dict)
+    is_notified = models.BooleanField('已通知', default=False)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '策略信号'
+        verbose_name_plural = '策略信号'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.strategy_name} - {self.symbol} {self.get_signal_type_display()}"

@@ -63,5 +63,32 @@ urlpatterns = [
     path('quant/backtest/<int:result_id>/', quant_views.backtest_detail, name='backtest_detail'),
     path('quant/backtest/trigger/', quant_views.trigger_backtest, name='trigger_backtest'),
     path('quant/backtest/task/<str:task_id>/', quant_views.backtest_task_status, name='backtest_task_status'),
+    # 可视化
+    path('quant/visualization/', quant_views.visualization_page, name='visualization'),
+    path('quant/api/kline/<str:symbol>/', quant_views.kline_api, name='kline_api'),
+    path('quant/api/compare/', quant_views.compare_api, name='compare_api'),
+    path('api/heatmap/', views.heatmap_api, name='heatmap_api'),
+    # 交易分析深化
+    path('analysis/trade/', views.trade_analysis_page, name='trade_analysis'),
+    path('api/analysis/tags/', views.api_tag_analysis, name='api_tag_analysis'),
+    path('api/analysis/holding/', views.api_holding_analysis, name='api_holding_analysis'),
+    path('api/analysis/drawdown/', views.api_drawdown_analysis, name='api_drawdown_analysis'),
+    path('api/analysis/correlation/', views.api_correlation_analysis, name='api_correlation_analysis'),
+    # 风控增强
+    path('risk/', views.risk_dashboard_page, name='risk_dashboard'),
+    path('api/risk/calculator/', views.api_position_calculator, name='api_position_calculator'),
+    path('api/risk/exposure/', views.api_risk_exposure, name='api_risk_exposure'),
+    path('api/risk/stop-alerts/', views.api_stop_loss_alerts, name='api_stop_alerts'),
+    path('api/risk/stop-alerts/create/', views.api_create_stop_alert, name='api_create_stop_alert'),
+    path('api/risk/rules-status/', views.api_risk_rules_status, name='api_risk_rules_status'),
+    # 数据管理
+    path('data-management/', views.data_management_page, name='data_management'),
+    path('api/data/backup/', views.api_backup_database, name='api_backup_database'),
+    path('api/data/restore/', views.api_restore_database, name='api_restore_database'),
+    path('api/data/backups/', views.api_list_backups, name='api_list_backups'),
+    path('api/data/backups/<str:filename>/download/', views.api_download_backup, name='api_download_backup'),
+    path('api/data/backups/<str:filename>/delete/', views.api_delete_backup, name='api_delete_backup'),
+    path('api/data/quality-check/', views.api_data_quality_check, name='api_data_quality_check'),
+    path('api/data/sources/', views.api_data_sources, name='api_data_sources'),
     path('admin/', admin.site.urls),
 ]

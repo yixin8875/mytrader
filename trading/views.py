@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from datetime import timedelta, datetime
 import json
 import logging
-from .models import Account, TradeLog, DailyReport, Position, Strategy, Notification, PriceAlert, Symbol
+from .models import Account, TradeLog, DailyReport, Position, Strategy, Notification, PriceAlert, Symbol, TradeTag
 from .analytics import TradeAnalytics
 from .notifications import NotificationService
 
@@ -890,3 +890,1241 @@ def api_automation_status(request):
 def health_check(request):
     """健康检查端点"""
     return JsonResponse({'status': 'ok'})
+
+
+def heatmap_api(request):
+    """盈亏热力图数据 API"""
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': '未登录'}, status=401)
+
+    account_id = request.GET.get('account_id')
+    year = request.GET.get('year', str(timezone.now().year))
+
+    try:
+        year = int(year)
+    except ValueError:
+        return JsonResponse({'error': '无效的年份'}, status=400)
+
+    # 获取日报数据
+    queryset = DailyReport.objects.filter(
+        account__owner=request.user,
+        date__year=year
+    )
+
+    if account_id:
+        queryset = queryset.filter(account_id=account_id)
+
+    # 按日期聚合盈亏
+    from django.db.models.functions import TruncDate
+    daily_pnl = queryset.values('date').annotate(
+        pnl=Sum('realized_pnl')
+    ).order_by('date')
+
+    # 转换为热力图格式 [[日期, 盈亏值], ...]
+    data = []
+    for item in daily_pnl:
+        data.append([
+            item['date'].strftime('%Y-%m-%d'),
+            float(item['pnl'] or 0)
+        ])
+
+    # 获取用户账户列表
+    accounts = list(Account.objects.filter(owner=request.user).values('id', 'name'))
+
+    return JsonResponse({
+        'year': year,
+        'data': data,
+        'accounts': accounts,
+    })
+
+
+# ============ 交易分析深化 API ============
+
+def trade_analysis_page(request):
+    """交易分析页面"""
+    if not request.user.is_authenticated:
+        return redirect('/admin/login/')
+
+    # 获取用户的标签
+    tags = TradeTag.objects.filter(owner=request.user).order_by('category', 'name')
+    accounts = Account.objects.filter(owner=request.user)
+
+    return render(request, 'trading/trade_analysis.html', {
+        'tags': tags,
+        'accounts': accounts,
+    })
+
+
+@login_required
+def api_tag_analysis(request):
+    """标签胜率分析 API"""
+    account_id = request.GET.get('account_id')
+
+    # 基础查询
+    trades = TradeLog.objects.filter(
+        account__owner=request.user,
+        status='filled'
+    )
+    if account_id:
+        trades = trades.filter(account_id=account_id)
+
+    # 获取用户所有标签的统计
+    tags = TradeTag.objects.filter(owner=request.user)
+    result = []
+
+    for tag in tags:
+        tag_trades = trades.filter(tags=tag)
+        total = tag_trades.count()
+        if total == 0:
+            continue
+
+        wins = tag_trades.filter(profit_loss__gt=0).count()
+        losses = tag_trades.filter(profit_loss__lt=0).count()
+        total_pnl = tag_trades.aggregate(pnl=Sum('profit_loss'))['pnl'] or 0
+        avg_pnl = tag_trades.aggregate(avg=Avg('profit_loss'))['avg'] or 0
+
+        # 计算平均盈利和平均亏损
+        avg_win = tag_trades.filter(profit_loss__gt=0).aggregate(avg=Avg('profit_loss'))['avg'] or 0
+        avg_loss = tag_trades.filter(profit_loss__lt=0).aggregate(avg=Avg('profit_loss'))['avg'] or 0
+
+        result.append({
+            'id': tag.id,
+            'name': tag.name,
+            'category': tag.get_category_display(),
+            'color': tag.color,
+            'total_trades': total,
+            'wins': wins,
+            'losses': losses,
+            'win_rate': round(wins / total * 100, 1) if total > 0 else 0,
+            'total_pnl': float(total_pnl),
+            'avg_pnl': float(avg_pnl),
+            'avg_win': float(avg_win),
+            'avg_loss': float(avg_loss),
+            'profit_factor': round(abs(avg_win / avg_loss), 2) if avg_loss != 0 else None,
+        })
+
+    # 按胜率排序
+    result.sort(key=lambda x: x['win_rate'], reverse=True)
+
+    return JsonResponse({'tags': result})
+
+
+@login_required
+def api_holding_analysis(request):
+    """持仓时间分析 API"""
+    account_id = request.GET.get('account_id')
+
+    trades = TradeLog.objects.filter(
+        account__owner=request.user,
+        status='filled',
+        holding_minutes__isnull=False
+    )
+    if account_id:
+        trades = trades.filter(account_id=account_id)
+
+    if not trades.exists():
+        return JsonResponse({'periods': [], 'distribution': []})
+
+    # 按持仓时间分组统计
+    periods = [
+        ('< 5分钟', 0, 5),
+        ('5-15分钟', 5, 15),
+        ('15-30分钟', 15, 30),
+        ('30-60分钟', 30, 60),
+        ('1-4小时', 60, 240),
+        ('4-8小时', 240, 480),
+        ('1天', 480, 1440),
+        ('1-3天', 1440, 4320),
+        ('3天以上', 4320, 999999),
+    ]
+
+    result = []
+    for label, min_mins, max_mins in periods:
+        period_trades = trades.filter(
+            holding_minutes__gte=min_mins,
+            holding_minutes__lt=max_mins
+        )
+        total = period_trades.count()
+        if total == 0:
+            continue
+
+        wins = period_trades.filter(profit_loss__gt=0).count()
+        total_pnl = period_trades.aggregate(pnl=Sum('profit_loss'))['pnl'] or 0
+        avg_pnl = period_trades.aggregate(avg=Avg('profit_loss'))['avg'] or 0
+
+        result.append({
+            'period': label,
+            'total_trades': total,
+            'wins': wins,
+            'win_rate': round(wins / total * 100, 1),
+            'total_pnl': float(total_pnl),
+            'avg_pnl': float(avg_pnl),
+        })
+
+    # 持仓时间分布（用于图表）
+    distribution = []
+    for trade in trades.values('holding_minutes', 'profit_loss')[:500]:
+        distribution.append({
+            'minutes': trade['holding_minutes'],
+            'pnl': float(trade['profit_loss']),
+        })
+
+    return JsonResponse({
+        'periods': result,
+        'distribution': distribution,
+        'best_period': max(result, key=lambda x: x['win_rate'])['period'] if result else None,
+    })
+
+
+@login_required
+def api_drawdown_analysis(request):
+    """回撤分析 API"""
+    account_id = request.GET.get('account_id')
+
+    # 获取日报数据计算回撤
+    reports = DailyReport.objects.filter(account__owner=request.user).order_by('date')
+    if account_id:
+        reports = reports.filter(account_id=account_id)
+
+    if not reports.exists():
+        return JsonResponse({'drawdowns': [], 'max_drawdown': None, 'problem_trades': []})
+
+    # 计算回撤序列
+    peak = 0
+    drawdowns = []
+    max_dd = 0
+    max_dd_start = None
+    max_dd_end = None
+    dd_start = None
+
+    for report in reports:
+        balance = float(report.ending_balance)
+        if balance > peak:
+            peak = balance
+            dd_start = report.date
+
+        if peak > 0:
+            dd = (peak - balance) / peak * 100
+            drawdowns.append({
+                'date': report.date.strftime('%Y-%m-%d'),
+                'drawdown': round(dd, 2),
+                'balance': balance,
+                'peak': peak,
+            })
+
+            if dd > max_dd:
+                max_dd = dd
+                max_dd_start = dd_start
+                max_dd_end = report.date
+
+    # 获取最大回撤期间的交易
+    problem_trades = []
+    if max_dd_start and max_dd_end:
+        trades = TradeLog.objects.filter(
+            account__owner=request.user,
+            status='filled',
+            trade_time__date__gte=max_dd_start,
+            trade_time__date__lte=max_dd_end,
+            profit_loss__lt=0
+        ).order_by('profit_loss')[:10]
+
+        if account_id:
+            trades = trades.filter(account_id=account_id)
+
+        for t in trades:
+            problem_trades.append({
+                'id': t.id,
+                'date': t.trade_time.strftime('%Y-%m-%d %H:%M'),
+                'symbol': t.symbol.code,
+                'side': t.get_side_display(),
+                'profit_loss': float(t.profit_loss),
+                'tags': [tag.name for tag in t.tags.all()],
+            })
+
+    return JsonResponse({
+        'drawdowns': drawdowns[-90:],  # 最近90天
+        'max_drawdown': {
+            'value': round(max_dd, 2),
+            'start_date': max_dd_start.strftime('%Y-%m-%d') if max_dd_start else None,
+            'end_date': max_dd_end.strftime('%Y-%m-%d') if max_dd_end else None,
+        } if max_dd > 0 else None,
+        'problem_trades': problem_trades,
+    })
+
+
+@login_required
+def api_correlation_analysis(request):
+    """持仓相关性分析 API"""
+    account_id = request.GET.get('account_id')
+
+    # 获取当前持仓
+    positions = Position.objects.filter(account__owner=request.user, quantity__gt=0)
+    if account_id:
+        positions = positions.filter(account_id=account_id)
+
+    if positions.count() < 2:
+        return JsonResponse({'correlation_matrix': [], 'concentration': None})
+
+    # 按标的类型分组统计
+    type_stats = {}
+    total_value = 0
+
+    for pos in positions:
+        symbol_type = pos.symbol.get_symbol_type_display()
+        value = float(pos.market_value) if pos.market_value else 0
+        total_value += value
+
+        if symbol_type not in type_stats:
+            type_stats[symbol_type] = {'value': 0, 'count': 0, 'symbols': []}
+        type_stats[symbol_type]['value'] += value
+        type_stats[symbol_type]['count'] += 1
+        type_stats[symbol_type]['symbols'].append(pos.symbol.code)
+
+    # 计算集中度
+    concentration = []
+    for type_name, stats in type_stats.items():
+        ratio = stats['value'] / total_value * 100 if total_value > 0 else 0
+        concentration.append({
+            'type': type_name,
+            'value': stats['value'],
+            'ratio': round(ratio, 1),
+            'count': stats['count'],
+            'symbols': stats['symbols'][:5],  # 最多显示5个
+        })
+
+    concentration.sort(key=lambda x: x['ratio'], reverse=True)
+
+    # 计算单一标的集中度
+    symbol_concentration = []
+    for pos in positions:
+        value = float(pos.market_value) if pos.market_value else 0
+        ratio = value / total_value * 100 if total_value > 0 else 0
+        symbol_concentration.append({
+            'symbol': pos.symbol.code,
+            'name': pos.symbol.name,
+            'value': value,
+            'ratio': round(ratio, 1),
+        })
+
+    symbol_concentration.sort(key=lambda x: x['ratio'], reverse=True)
+
+    # 风险提示
+    warnings = []
+    # 单一标的超过30%
+    for item in symbol_concentration:
+        if item['ratio'] > 30:
+            warnings.append(f"{item['symbol']} 占比 {item['ratio']}%，建议分散投资")
+    # 单一类型超过50%
+    for item in concentration:
+        if item['ratio'] > 50:
+            warnings.append(f"{item['type']} 类资产占比 {item['ratio']}%，建议分散配置")
+
+    return JsonResponse({
+        'type_concentration': concentration,
+        'symbol_concentration': symbol_concentration[:10],
+        'total_value': total_value,
+        'warnings': warnings,
+    })
+
+
+# ============ 风控增强 API ============
+
+def risk_dashboard_page(request):
+    """风控仪表盘页面"""
+    if not request.user.is_authenticated:
+        return redirect('/admin/login/')
+
+    accounts = Account.objects.filter(owner=request.user)
+    symbols = Symbol.objects.filter(is_active=True)
+
+    return render(request, 'trading/risk_dashboard.html', {
+        'accounts': accounts,
+        'symbols': symbols,
+    })
+
+
+@login_required
+def api_position_calculator(request):
+    """仓位计算器 API"""
+    try:
+        account_balance = float(request.GET.get('balance', 0))
+        risk_percent = float(request.GET.get('risk_percent', 2))  # 默认2%风险
+        entry_price = float(request.GET.get('entry_price', 0))
+        stop_loss = float(request.GET.get('stop_loss', 0))
+        symbol_id = request.GET.get('symbol_id')
+
+        if not all([account_balance, entry_price, stop_loss]):
+            return JsonResponse({'error': '请填写完整参数'}, status=400)
+
+        # 计算每股风险
+        risk_per_share = abs(entry_price - stop_loss)
+        if risk_per_share == 0:
+            return JsonResponse({'error': '止损价不能等于入场价'}, status=400)
+
+        # 最大风险金额
+        max_risk_amount = account_balance * (risk_percent / 100)
+
+        # 合约乘数
+        contract_size = 1
+        if symbol_id:
+            try:
+                symbol = Symbol.objects.get(id=symbol_id)
+                if symbol.symbol_type in ['futures', 'index']:
+                    contract_size = float(symbol.contract_size)
+            except Symbol.DoesNotExist:
+                pass
+
+        # 计算建仓数量
+        risk_per_unit = risk_per_share * contract_size
+        position_size = int(max_risk_amount / risk_per_unit)
+
+        # 计算相关数据
+        total_cost = position_size * entry_price * contract_size
+        actual_risk = position_size * risk_per_unit
+        position_ratio = (total_cost / account_balance * 100) if account_balance > 0 else 0
+
+        return JsonResponse({
+            'position_size': position_size,
+            'max_risk_amount': round(max_risk_amount, 2),
+            'actual_risk': round(actual_risk, 2),
+            'total_cost': round(total_cost, 2),
+            'position_ratio': round(position_ratio, 2),
+            'risk_per_unit': round(risk_per_unit, 2),
+            'contract_size': contract_size,
+        })
+
+    except (ValueError, TypeError) as e:
+        return JsonResponse({'error': '参数格式错误'}, status=400)
+
+
+@login_required
+def api_risk_exposure(request):
+    """风险敞口 API"""
+    account_id = request.GET.get('account_id')
+
+    # 获取持仓
+    positions = Position.objects.filter(
+        account__owner=request.user,
+        quantity__gt=0
+    ).select_related('symbol', 'account')
+
+    if account_id:
+        positions = positions.filter(account_id=account_id)
+
+    # 获取账户总资产
+    accounts = Account.objects.filter(owner=request.user)
+    if account_id:
+        accounts = accounts.filter(id=account_id)
+    total_balance = float(accounts.aggregate(total=Sum('current_balance'))['total'] or 0)
+
+    # 计算风险敞口
+    exposure_data = []
+    total_exposure = 0
+    total_unrealized_pnl = 0
+
+    for pos in positions:
+        market_value = float(pos.market_value) if pos.market_value else 0
+        unrealized_pnl = float(pos.profit_loss) if pos.profit_loss else 0
+        exposure_ratio = (market_value / total_balance * 100) if total_balance > 0 else 0
+
+        total_exposure += market_value
+        total_unrealized_pnl += unrealized_pnl
+
+        exposure_data.append({
+            'account': pos.account.name,
+            'symbol': pos.symbol.code,
+            'symbol_name': pos.symbol.name,
+            'quantity': float(pos.quantity),
+            'avg_price': float(pos.avg_price),
+            'current_price': float(pos.current_price) if pos.current_price else None,
+            'market_value': market_value,
+            'unrealized_pnl': unrealized_pnl,
+            'pnl_ratio': float(pos.profit_loss_ratio) if pos.profit_loss_ratio else 0,
+            'exposure_ratio': round(exposure_ratio, 2),
+        })
+
+    # 风险指标
+    exposure_ratio = (total_exposure / total_balance * 100) if total_balance > 0 else 0
+
+    # 获取最新风险快照
+    latest_snapshot = RiskSnapshot.objects.filter(
+        account__owner=request.user
+    ).order_by('-snapshot_date').first()
+
+    risk_metrics = {
+        'total_balance': total_balance,
+        'total_exposure': total_exposure,
+        'exposure_ratio': round(exposure_ratio, 2),
+        'unrealized_pnl': total_unrealized_pnl,
+        'cash_available': total_balance - total_exposure,
+        'position_count': len(exposure_data),
+    }
+
+    if latest_snapshot:
+        risk_metrics.update({
+            'current_drawdown': float(latest_snapshot.current_drawdown_percent),
+            'max_drawdown': float(latest_snapshot.max_drawdown_percent),
+            'consecutive_losses': latest_snapshot.consecutive_losses,
+            'risk_score': latest_snapshot.risk_score,
+        })
+
+    return JsonResponse({
+        'positions': exposure_data,
+        'metrics': risk_metrics,
+    })
+
+
+@login_required
+def api_stop_loss_alerts(request):
+    """止损止盈提醒列表 API"""
+    # 获取用户的价格提醒
+    alerts = PriceAlert.objects.filter(
+        owner=request.user,
+        status='active'
+    ).select_related('symbol', 'position').order_by('-created_at')
+
+    result = []
+    for alert in alerts:
+        result.append({
+            'id': alert.id,
+            'symbol': alert.symbol.code,
+            'symbol_name': alert.symbol.name,
+            'alert_type': alert.alert_type,
+            'alert_type_display': alert.get_alert_type_display(),
+            'condition': alert.get_condition_display(),
+            'target_price': float(alert.target_price),
+            'last_price': float(alert.last_price) if alert.last_price else None,
+            'position_id': alert.position_id,
+            'notes': alert.notes,
+            'created_at': alert.created_at.strftime('%Y-%m-%d %H:%M'),
+        })
+
+    return JsonResponse({'alerts': result})
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_create_stop_alert(request):
+    """创建止损止盈提醒 API"""
+    try:
+        data = json.loads(request.body)
+        symbol_id = data.get('symbol_id')
+        position_id = data.get('position_id')
+        alert_type = data.get('alert_type', 'price')  # price, stop_loss, take_profit
+        condition = data.get('condition')  # above, below
+        target_price = data.get('target_price')
+        notes = data.get('notes', '')
+
+        if not all([symbol_id, condition, target_price]):
+            return JsonResponse({'error': '请填写完整参数'}, status=400)
+
+        symbol = Symbol.objects.get(id=symbol_id)
+        position = None
+        if position_id:
+            position = Position.objects.get(id=position_id, account__owner=request.user)
+
+        alert = PriceAlert.objects.create(
+            owner=request.user,
+            symbol=symbol,
+            position=position,
+            alert_type=alert_type,
+            condition=condition,
+            target_price=target_price,
+            notes=notes,
+            trigger_once=True,
+        )
+
+        type_display = dict(PriceAlert.ALERT_TYPE_CHOICES).get(alert_type, '价格提醒')
+        return JsonResponse({
+            'status': 'success',
+            'alert_id': alert.id,
+            'message': f'已创建 {symbol.code} {type_display}'
+        })
+
+    except Symbol.DoesNotExist:
+        return JsonResponse({'error': '标的不存在'}, status=404)
+    except Position.DoesNotExist:
+        return JsonResponse({'error': '持仓不存在'}, status=404)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': '参数格式错误'}, status=400)
+
+
+@login_required
+def api_risk_rules_status(request):
+    """风险规则状态 API"""
+    account_id = request.GET.get('account_id')
+
+    rules = RiskRule.objects.filter(
+        account__owner=request.user,
+        is_active=True
+    ).select_related('account')
+
+    if account_id:
+        rules = rules.filter(account_id=account_id)
+
+    result = []
+    for rule in rules:
+        # 获取当前值
+        current_value = 0
+        if rule.rule_type == 'daily_loss_limit':
+            today_pnl = TradeLog.objects.filter(
+                account=rule.account,
+                trade_time__date=timezone.now().date(),
+                status='filled'
+            ).aggregate(pnl=Sum('profit_loss'))['pnl'] or 0
+            current_value = abs(float(today_pnl)) if today_pnl < 0 else 0
+        elif rule.rule_type == 'max_position_ratio':
+            total_position = Position.objects.filter(
+                account=rule.account,
+                quantity__gt=0
+            ).aggregate(total=Sum('market_value'))['total'] or 0
+            if rule.account.current_balance > 0:
+                current_value = float(total_position) / float(rule.account.current_balance) * 100
+        elif rule.rule_type == 'daily_trade_limit':
+            current_value = TradeLog.objects.filter(
+                account=rule.account,
+                trade_time__date=timezone.now().date()
+            ).count()
+
+        threshold = float(rule.threshold_value)
+        usage_ratio = (current_value / threshold * 100) if threshold > 0 else 0
+
+        result.append({
+            'id': rule.id,
+            'account': rule.account.name,
+            'name': rule.name,
+            'rule_type': rule.get_rule_type_display(),
+            'level': rule.get_level_display(),
+            'threshold': rule.get_threshold_display(),
+            'current_value': round(current_value, 2),
+            'usage_ratio': round(usage_ratio, 1),
+            'is_triggered': usage_ratio >= 100,
+        })
+
+    return JsonResponse({'rules': result})
+
+
+# ==================== 数据管理 ====================
+
+@login_required
+def data_management_page(request):
+    """数据管理页面"""
+    from quant.models import StockData
+
+    # 统计信息
+    stock_count = StockData.objects.values('symbol').distinct().count()
+    record_count = StockData.objects.count()
+    date_range = StockData.objects.aggregate(
+        min_date=models.Min('date'),
+        max_date=models.Max('date')
+    )
+
+    context = {
+        'stock_count': stock_count,
+        'record_count': record_count,
+        'date_range': date_range,
+    }
+    return render(request, 'trading/data_management.html', context)
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_backup_database(request):
+    """数据库备份 API"""
+    import subprocess
+    import os
+    from django.conf import settings
+
+    try:
+        data = json.loads(request.body)
+        backup_type = data.get('type', 'full')  # full, trading, quant
+
+        backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+
+        timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'backup_{backup_type}_{timestamp}.json'
+        filepath = os.path.join(backup_dir, filename)
+
+        # 根据类型选择要备份的app
+        apps = []
+        if backup_type == 'full':
+            apps = ['trading', 'quant']
+        elif backup_type == 'trading':
+            apps = ['trading']
+        elif backup_type == 'quant':
+            apps = ['quant']
+
+        # 使用Django dumpdata
+        cmd = ['.venv/bin/python', 'manage.py', 'dumpdata'] + apps + ['--indent', '2', '-o', filepath]
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=settings.BASE_DIR)
+
+        if result.returncode != 0:
+            return JsonResponse({'error': f'备份失败: {result.stderr}'}, status=500)
+
+        file_size = os.path.getsize(filepath)
+        return JsonResponse({
+            'status': 'success',
+            'filename': filename,
+            'size': file_size,
+            'path': filepath,
+            'message': f'备份成功，文件大小: {file_size / 1024:.1f} KB'
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_restore_database(request):
+    """数据库恢复 API"""
+    import subprocess
+    import os
+    from django.conf import settings
+
+    try:
+        if 'file' not in request.FILES:
+            return JsonResponse({'error': '请上传备份文件'}, status=400)
+
+        uploaded_file = request.FILES['file']
+        if not uploaded_file.name.endswith('.json'):
+            return JsonResponse({'error': '仅支持JSON格式的备份文件'}, status=400)
+
+        # 保存上传的文件
+        backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+        filepath = os.path.join(backup_dir, f'restore_{uploaded_file.name}')
+
+        with open(filepath, 'wb+') as f:
+            for chunk in uploaded_file.chunks():
+                f.write(chunk)
+
+        # 使用Django loaddata
+        cmd = ['.venv/bin/python', 'manage.py', 'loaddata', filepath]
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=settings.BASE_DIR)
+
+        # 清理临时文件
+        os.remove(filepath)
+
+        if result.returncode != 0:
+            return JsonResponse({'error': f'恢复失败: {result.stderr}'}, status=500)
+
+        return JsonResponse({
+            'status': 'success',
+            'message': '数据恢复成功'
+        })
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+def api_list_backups(request):
+    """列出备份文件 API"""
+    import os
+    from django.conf import settings
+
+    backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+    if not os.path.exists(backup_dir):
+        return JsonResponse({'backups': []})
+
+    backups = []
+    for filename in os.listdir(backup_dir):
+        if filename.endswith('.json') and filename.startswith('backup_'):
+            filepath = os.path.join(backup_dir, filename)
+            stat = os.stat(filepath)
+            backups.append({
+                'filename': filename,
+                'size': stat.st_size,
+                'created_at': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+            })
+
+    backups.sort(key=lambda x: x['created_at'], reverse=True)
+    return JsonResponse({'backups': backups})
+
+
+@login_required
+def api_download_backup(request, filename):
+    """下载备份文件 API"""
+    import os
+    from django.conf import settings
+
+    backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+    filepath = os.path.join(backup_dir, filename)
+
+    if not os.path.exists(filepath) or not filename.startswith('backup_'):
+        return JsonResponse({'error': '文件不存在'}, status=404)
+
+    with open(filepath, 'rb') as f:
+        response = HttpResponse(f.read(), content_type='application/json')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_delete_backup(request, filename):
+    """删除备份文件 API"""
+    import os
+    from django.conf import settings
+
+    backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+    filepath = os.path.join(backup_dir, filename)
+
+    if not os.path.exists(filepath) or not filename.startswith('backup_'):
+        return JsonResponse({'error': '文件不存在'}, status=404)
+
+    os.remove(filepath)
+    return JsonResponse({'status': 'success', 'message': '删除成功'})
+
+
+@login_required
+def api_data_quality_check(request):
+    """数据质量检查 API"""
+    from quant.models import StockData
+    from quant.data_fetcher import TradingCalendar
+    from django.db.models import Count, Min, Max
+
+    symbol = request.GET.get('symbol')
+
+    issues = []
+
+    if symbol:
+        # 检查单个股票
+        data = StockData.objects.filter(symbol=symbol).order_by('date')
+        if not data.exists():
+            return JsonResponse({'issues': [{'type': 'no_data', 'message': f'{symbol} 无数据'}]})
+
+        dates = list(data.values_list('date', flat=True))
+
+        # 1. 检查缺失交易日
+        if len(dates) >= 2:
+            trade_dates = TradingCalendar.get_trade_dates_range(dates[0], dates[-1])
+            missing_dates = set(trade_dates) - set(dates)
+            if missing_dates:
+                issues.append({
+                    'type': 'missing_dates',
+                    'symbol': symbol,
+                    'count': len(missing_dates),
+                    'dates': sorted([d.strftime('%Y-%m-%d') for d in list(missing_dates)[:10]]),
+                    'message': f'{symbol} 缺失 {len(missing_dates)} 个交易日数据'
+                })
+
+        # 2. 检查异常价格
+        for record in data:
+            # 价格为0或负数
+            if record.close <= 0 or record.open <= 0:
+                issues.append({
+                    'type': 'invalid_price',
+                    'symbol': symbol,
+                    'date': record.date.strftime('%Y-%m-%d'),
+                    'message': f'{symbol} {record.date} 价格异常 (close={record.close})'
+                })
+            # 涨跌幅超过20%（可能是除权未复权）
+            if record.high > 0 and record.low > 0:
+                daily_range = (record.high - record.low) / record.low * 100
+                if daily_range > 25:
+                    issues.append({
+                        'type': 'extreme_volatility',
+                        'symbol': symbol,
+                        'date': record.date.strftime('%Y-%m-%d'),
+                        'message': f'{symbol} {record.date} 日内波动异常 ({daily_range:.1f}%)'
+                    })
+            # 成交量为0
+            if record.volume == 0:
+                issues.append({
+                    'type': 'zero_volume',
+                    'symbol': symbol,
+                    'date': record.date.strftime('%Y-%m-%d'),
+                    'message': f'{symbol} {record.date} 成交量为0'
+                })
+    else:
+        # 检查所有股票概览
+        symbols = StockData.objects.values('symbol').annotate(
+            count=Count('id'),
+            min_date=Min('date'),
+            max_date=Max('date')
+        )
+
+        for s in symbols:
+            # 检查数据连续性
+            expected_days = (s['max_date'] - s['min_date']).days * 0.7  # 约70%是交易日
+            if s['count'] < expected_days * 0.8:  # 数据量不足预期的80%
+                issues.append({
+                    'type': 'incomplete_data',
+                    'symbol': s['symbol'],
+                    'count': s['count'],
+                    'expected': int(expected_days),
+                    'message': f"{s['symbol']} 数据可能不完整 ({s['count']}/{int(expected_days)})"
+                })
+
+    return JsonResponse({
+        'issues': issues[:50],  # 最多返回50条
+        'total_issues': len(issues)
+    })
+
+
+@login_required
+def api_data_sources(request):
+    """获取数据源配置 API"""
+    # 支持的数据源
+    sources = [
+        {
+            'id': 'akshare',
+            'name': 'AkShare',
+            'description': '免费开源的A股数据接口',
+            'status': 'active',
+            'markets': ['A股'],
+            'features': ['日线', '分钟线', '财务数据', '实时行情'],
+        },
+        {
+            'id': 'tushare',
+            'name': 'Tushare',
+            'description': '需要积分的专业金融数据接口',
+            'status': 'available',
+            'markets': ['A股', '港股', '美股'],
+            'features': ['日线', '分钟线', '财务数据', '基本面'],
+            'config_required': ['token'],
+        },
+        {
+            'id': 'baostock',
+            'name': 'BaoStock',
+            'description': '免费的证券数据接口',
+            'status': 'available',
+            'markets': ['A股'],
+            'features': ['日线', '分钟线', '指数'],
+        },
+    ]
+    return JsonResponse({'sources': sources})
+
+
+# ==================== 自动化扩展 ====================
+
+@login_required
+def automation_extended_page(request):
+    """自动化扩展页面"""
+    from .models import Webhook, ScheduledReport, StrategySignal
+
+    webhooks = Webhook.objects.filter(owner=request.user)
+    reports = ScheduledReport.objects.filter(owner=request.user)
+    signals = StrategySignal.objects.filter(owner=request.user)[:20]
+
+    context = {
+        'webhooks': webhooks,
+        'reports': reports,
+        'signals': signals,
+    }
+    return render(request, 'trading/automation_extended.html', context)
+
+
+@login_required
+def api_strategy_signals(request):
+    """策略信号列表 API"""
+    from .models import StrategySignal
+
+    signals = StrategySignal.objects.filter(owner=request.user).order_by('-created_at')[:50]
+    result = [{
+        'id': s.id,
+        'strategy_name': s.strategy_name,
+        'symbol': s.symbol,
+        'signal_type': s.signal_type,
+        'signal_type_display': s.get_signal_type_display(),
+        'source': s.get_source_display(),
+        'price': float(s.price) if s.price else None,
+        'quantity': s.quantity,
+        'reason': s.reason,
+        'is_notified': s.is_notified,
+        'created_at': s.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+    } for s in signals]
+
+    return JsonResponse({'signals': result})
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_create_strategy_signal(request):
+    """创建策略信号 API（用于回测等内部调用）"""
+    from .models import StrategySignal
+    from .notifications import NotificationService
+
+    try:
+        data = json.loads(request.body)
+        signal = StrategySignal.objects.create(
+            owner=request.user,
+            strategy_name=data.get('strategy_name', ''),
+            symbol=data.get('symbol', ''),
+            signal_type=data.get('signal_type', 'buy'),
+            source=data.get('source', 'backtest'),
+            price=data.get('price'),
+            quantity=data.get('quantity'),
+            reason=data.get('reason', ''),
+            extra_data=data.get('extra_data', {}),
+        )
+
+        # 发送通知
+        service = NotificationService(request.user)
+        service.create_notification(
+            notification_type='system',
+            title=f'策略信号: {signal.symbol} {signal.get_signal_type_display()}',
+            message=f'{signal.strategy_name} 产生 {signal.get_signal_type_display()} 信号，价格: {signal.price or "-"}',
+            priority='high',
+            extra_data={'signal_id': signal.id}
+        )
+        signal.is_notified = True
+        signal.save(update_fields=['is_notified'])
+
+        return JsonResponse({'status': 'success', 'signal_id': signal.id})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+# Webhook APIs
+@login_required
+def api_webhooks(request):
+    """Webhook列表 API"""
+    from .models import Webhook
+
+    webhooks = Webhook.objects.filter(owner=request.user)
+    result = [{
+        'id': w.id,
+        'name': w.name,
+        'webhook_type': w.webhook_type,
+        'webhook_type_display': w.get_webhook_type_display(),
+        'url': w.url,
+        'secret_key': w.secret_key,
+        'status': w.status,
+        'trigger_count': w.trigger_count,
+        'last_triggered': w.last_triggered.strftime('%Y-%m-%d %H:%M') if w.last_triggered else None,
+    } for w in webhooks]
+
+    return JsonResponse({'webhooks': result})
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_create_webhook(request):
+    """创建Webhook API"""
+    from .models import Webhook
+
+    try:
+        data = json.loads(request.body)
+        webhook = Webhook.objects.create(
+            owner=request.user,
+            name=data.get('name', ''),
+            webhook_type=data.get('webhook_type', 'inbound'),
+            url=data.get('url', ''),
+            description=data.get('description', ''),
+        )
+        return JsonResponse({
+            'status': 'success',
+            'webhook_id': webhook.id,
+            'secret_key': webhook.secret_key,
+            'message': f'Webhook创建成功，密钥: {webhook.secret_key}'
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_delete_webhook(request, webhook_id):
+    """删除Webhook API"""
+    from .models import Webhook
+
+    try:
+        webhook = Webhook.objects.get(id=webhook_id, owner=request.user)
+        webhook.delete()
+        return JsonResponse({'status': 'success'})
+    except Webhook.DoesNotExist:
+        return JsonResponse({'error': 'Webhook不存在'}, status=404)
+
+
+@require_http_methods(['POST'])
+@csrf_exempt
+def api_webhook_receive(request, secret_key):
+    """接收外部Webhook信号 API（无需登录）"""
+    from .models import Webhook, WebhookLog, StrategySignal
+    from .notifications import NotificationService
+
+    try:
+        webhook = Webhook.objects.get(secret_key=secret_key, webhook_type='inbound', status='active')
+    except Webhook.DoesNotExist:
+        return JsonResponse({'error': 'Invalid webhook'}, status=404)
+
+    try:
+        data = json.loads(request.body)
+
+        # 记录日志
+        log = WebhookLog.objects.create(
+            webhook=webhook,
+            direction='in',
+            payload=data,
+            success=True,
+        )
+
+        # 更新webhook统计
+        webhook.last_triggered = timezone.now()
+        webhook.trigger_count += 1
+        webhook.save(update_fields=['last_triggered', 'trigger_count'])
+
+        # 创建策略信号
+        signal = StrategySignal.objects.create(
+            owner=webhook.owner,
+            strategy_name=data.get('strategy', webhook.name),
+            symbol=data.get('symbol', ''),
+            signal_type=data.get('action', 'buy'),
+            source='webhook',
+            price=data.get('price'),
+            quantity=data.get('quantity'),
+            reason=data.get('message', ''),
+            extra_data=data,
+        )
+
+        # 发送通知
+        service = NotificationService(webhook.owner)
+        service.create_notification(
+            notification_type='system',
+            title=f'Webhook信号: {signal.symbol}',
+            message=f'{signal.strategy_name} - {signal.get_signal_type_display()} @ {signal.price or "-"}',
+            priority='high',
+        )
+        signal.is_notified = True
+        signal.save(update_fields=['is_notified'])
+
+        return JsonResponse({'status': 'success', 'signal_id': signal.id})
+
+    except json.JSONDecodeError:
+        WebhookLog.objects.create(
+            webhook=webhook, direction='in', payload={},
+            success=False, error_message='Invalid JSON'
+        )
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        WebhookLog.objects.create(
+            webhook=webhook, direction='in', payload=data if 'data' in dir() else {},
+            success=False, error_message=str(e)
+        )
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# 定时报告 APIs
+@login_required
+def api_scheduled_reports(request):
+    """定时报告列表 API"""
+    from .models import ScheduledReport
+
+    reports = ScheduledReport.objects.filter(owner=request.user)
+    result = [{
+        'id': r.id,
+        'name': r.name,
+        'report_type': r.report_type,
+        'report_type_display': r.get_report_type_display(),
+        'frequency': r.frequency,
+        'frequency_display': r.get_frequency_display(),
+        'send_time': r.send_time.strftime('%H:%M'),
+        'send_day': r.send_day,
+        'email': r.email,
+        'is_active': r.is_active,
+        'last_sent': r.last_sent.strftime('%Y-%m-%d %H:%M') if r.last_sent else None,
+    } for r in reports]
+
+    return JsonResponse({'reports': result})
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_create_scheduled_report(request):
+    """创建定时报告 API"""
+    from .models import ScheduledReport
+
+    try:
+        data = json.loads(request.body)
+        report = ScheduledReport.objects.create(
+            owner=request.user,
+            name=data.get('name', ''),
+            report_type=data.get('report_type', 'trade_summary'),
+            frequency=data.get('frequency', 'daily'),
+            send_time=data.get('send_time', '08:00'),
+            send_day=data.get('send_day', 1),
+            email=data.get('email', ''),
+        )
+        return JsonResponse({'status': 'success', 'report_id': report.id})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_toggle_scheduled_report(request, report_id):
+    """切换定时报告状态 API"""
+    from .models import ScheduledReport
+
+    try:
+        report = ScheduledReport.objects.get(id=report_id, owner=request.user)
+        report.is_active = not report.is_active
+        report.save(update_fields=['is_active'])
+        return JsonResponse({'status': 'success', 'is_active': report.is_active})
+    except ScheduledReport.DoesNotExist:
+        return JsonResponse({'error': '报告不存在'}, status=404)
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_delete_scheduled_report(request, report_id):
+    """删除定时报告 API"""
+    from .models import ScheduledReport
+
+    try:
+        report = ScheduledReport.objects.get(id=report_id, owner=request.user)
+        report.delete()
+        return JsonResponse({'status': 'success'})
+    except ScheduledReport.DoesNotExist:
+        return JsonResponse({'error': '报告不存在'}, status=404)
+
+
+@login_required
+@require_http_methods(['POST'])
+def api_send_test_report(request):
+    """发送测试报告 API"""
+    from django.core.mail import send_mail
+    from django.conf import settings
+
+    try:
+        data = json.loads(request.body)
+        email = data.get('email')
+
+        if not email:
+            return JsonResponse({'error': '请提供邮箱地址'}, status=400)
+
+        # 生成测试报告内容
+        report_content = f"""
+MyTrader 测试报告
+
+用户: {request.user.username}
+时间: {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+这是一封测试邮件，用于验证邮件发送功能是否正常。
+
+如果您收到此邮件，说明邮件配置正确。
+
+---
+MyTrader 交易管理系统
+        """
+
+        # 尝试发送邮件
+        try:
+            send_mail(
+                subject='[MyTrader] 测试报告',
+                message=report_content,
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@mytrader.local'),
+                recipient_list=[email],
+                fail_silently=False,
+            )
+            return JsonResponse({'status': 'success', 'message': f'测试邮件已发送至 {email}'})
+        except Exception as e:
+            return JsonResponse({'status': 'warning', 'message': f'邮件发送失败（可能未配置SMTP）: {str(e)}'})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
